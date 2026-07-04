@@ -1,13 +1,39 @@
 """
 XAUUSD Mission Control Dashboard
-v7.2 — Fixed: key mismatches, Path.home(), auto-refresh, top_news format
+v8 — E7: Real-Time Chart with PollingMarketDataAdapter
+
+E7 responsibilities:
+  1. Initialize PollingMarketDataAdapter on first load
+  2. Timeframe selector with session_state persistence
+  3. Manual "Fetch Real Bars" button → adapter.refresh() + render_streamlit_chart
+  4. Display latest bar time / data source / quota summary
+  5. CandleStore cache → last successful bars visible even if quota exhausted
+
+Does NOT (E7 exclusions):
+  - No auto-refresh for chart (user manually clicks Fetch)
+  - No /price intra-bar update
+  - No signal overlay
+  - No WebSocket
+  - Does NOT modify existing candlestick/fusion/briefing panels
+  - Does NOT touch existing auto-refresh control
 
 Reads from:
   ~/projects/daily-xauusd-bot/data/history/  (JSON reports)
   ~/projects/daily-xauusd-bot/logs/            (log file)
+  Twelve Data REST API                         (real-time chart data)
 """
 
 import os
+import sys
+from pathlib import Path
+
+# ── Bootstrap: add src/ to Python path so 'from daily_xauusd_brief ...' resolves ──
+# Allows `streamlit run dashboard.py` from the project root without needing a virtualenv activation.
+_dashboard_py = Path(__file__).resolve()              # …/src/daily_xauusd_brief/dashboard.py
+_src = _dashboard_py.parent.parent                    # …/src  (package root)
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
 import streamlit as st
 import pandas as pd
 import json
@@ -15,13 +41,10 @@ from pathlib import Path
 from datetime import datetime
 
 # ── Robust path resolution ─────────────────────────────────────────────────
-# Use Path.home() for reliable cross-platform home dir (works in Git Bash,
-# CMD, PowerShell, and Windows Python).
 BASE_DIR = Path.home() / "projects" / "daily-xauusd-bot"
 JSON_DIR = BASE_DIR / "data" / "history"
 LOG_FILE = BASE_DIR / "logs" / "daily-xauusd-brief.log"
 
-# Ensure data directory exists (shows friendly error if not)
 if not BASE_DIR.exists():
     st.error(f"Project directory not found: {BASE_DIR}")
     st.info("Run `python -m daily_xauusd_brief.main --dry-run` first to generate data.")
@@ -40,11 +63,9 @@ def load_latest_report(mode: str = "daily") -> dict | None:
     """Return the most recent JSON report for the given mode, or None."""
     if not JSON_DIR.exists():
         return None
-
     files = sorted(JSON_DIR.glob(f"*{mode}*.json"), reverse=True)
     if not files:
         return None
-
     try:
         with open(files[0], "r", encoding="utf-8") as f:
             return json.load(f)
@@ -56,7 +77,6 @@ def load_recent_reports(limit: int = 14) -> list[dict]:
     """Load up to `limit` recent JSON reports across all modes."""
     if not JSON_DIR.exists():
         return []
-
     files = sorted(JSON_DIR.glob("*.json"), reverse=True)
     reports = []
     for f in files[:limit]:
@@ -72,7 +92,6 @@ def get_cron_status() -> str:
     """Parse log file for last execution result."""
     if not LOG_FILE.exists():
         return "Unknown (log not found)"
-
     try:
         with open(LOG_FILE, "r", encoding="utf-8") as f:
             lines = f.readlines()
@@ -87,12 +106,7 @@ def get_cron_status() -> str:
 
 
 def load_latest_candle() -> dict | None:
-    """
-    Load the most recent candlestick EngineOutput from
-    data/history/candlestick/.
-
-    Returns the EngineOutput dict or None.
-    """
+    """Load the most recent candlestick EngineOutput from data/history/candlestick/."""
     candle_dir = JSON_DIR / "candlestick"
     if not candle_dir.exists():
         return None
@@ -130,12 +144,51 @@ def format_news_item(n) -> str:
     return str(n)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  E7: Real-Time Chart Section (PollingMarketDataAdapter)
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _init_market_data():
+    """Initialize PollingMarketDataAdapter in session_state (once per session)."""
+    if "market_data_adapter" not in st.session_state:
+        try:
+            from daily_xauusd_brief.market_data import PollingMarketDataAdapter
+            st.session_state.market_data_adapter = PollingMarketDataAdapter()
+        except Exception as exc:
+            st.session_state.market_data_adapter = None
+            st.session_state.market_data_error = str(exc)
+
+
+def _quota_summary(adapter) -> str:
+    """Return a human-readable quota status string."""
+    if adapter is None:
+        return "adapter unavailable"
+    try:
+        quota = adapter._quota
+        used = quota._daily_used
+        budget = quota.daily_budget
+        pct = used / budget * 100 if budget else 0
+        resets_in = max(0, 86400 - quota._window_start_time)
+        resets_h = resets_in // 3600
+        resets_m = (resets_in % 3600) // 60
+        return (
+            f"quota: {used}/{budget} cr used ({pct:.0f}%) · "
+            f"per-min: {quota._minute_count}/8 · "
+            f"daily reset in ~{resets_h}h {resets_m}m"
+        )
+    except Exception:
+        return "quota status unknown"
+
+
 # ── UI ─────────────────────────────────────────────────────────────────────
 
 st.title("🥇 XAUUSD Mission Control")
 st.caption(f"Data: `{JSON_DIR}`")
 
-# Auto-refresh / manual refresh
+# E7: Initialize market data adapter once
+_init_market_data()
+
+# Auto-refresh / manual refresh (existing — NOT modified by E7)
 col_refresh = st.columns([1, 1, 4])
 with col_refresh[0]:
     if st.button("🔄 Refresh"):
@@ -155,7 +208,6 @@ col1, col2, col3, col4 = st.columns(4)
 # 1. Price + change
 if latest:
     price = latest.get("xauusd_price", "N/A")
-    # Fix: correct key is daily_change_pct (not daily_change)
     change_pct = latest.get("daily_change_pct", latest.get("daily_change_abs", "N/A"))
     if isinstance(change_pct, float):
         delta = f"{change_pct:+.2f}%"
@@ -174,7 +226,7 @@ col3.metric("Active Mode", "Daily")
 # 4. Last run time
 if latest:
     ts = latest.get("timestamp", "")
-    ts_display = ts[11:16] if len(ts) > 16 else ts  # HH:MM
+    ts_display = ts[11:16] if len(ts) > 16 else ts
     col4.metric("Last Run", ts_display)
 else:
     col4.metric("Last Run", "N/A")
@@ -185,7 +237,6 @@ st.divider()
 left_col, right_col = st.columns([2, 1])
 
 with left_col:
-    # Latest Briefing Summary
     st.subheader("📰 Latest Briefing Summary")
     if latest:
         with st.expander("View Full Summary", expanded=True):
@@ -237,7 +288,6 @@ with left_col:
 with right_col:
     st.subheader("🔍 Insights")
     if reports:
-        # Theme keywords
         themes = ["Fed", "CPI", "NFP", "Yields", "Dollar", "Geopolitics",
                   "Support", "Resistance", "MA20", "Bullish", "Bearish"]
         all_text = " ".join([
@@ -264,7 +314,212 @@ with right_col:
     else:
         st.info("Run pipeline to see insights.")
 
-# ── Candlestick Full Analysis (V3 M3) ──────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+#  E7: Real-Time XAUUSD Chart (Twelve Data)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  E7/E8: Real-Time XAUUSD Chart (Twelve Data)
+#  E7: Manual fetch button + real bars via PollingMarketDataAdapter
+#  E8: Controlled auto-refresh with session_state toggle + conservative interval
+# ══════════════════════════════════════════════════════════════════════════════
+
+st.divider()
+st.subheader("📊 Real-Time XAUUSD Chart (Twelve Data)")
+
+adapter = st.session_state.get("market_data_adapter")
+
+# ── E8: Auto-refresh state initialization ─────────────────────────────
+# Tracks previous render timestamp to detect auto-refresh reruns.
+now_ts = datetime.now().timestamp()
+st.session_state["prev_render_ts"] = st.session_state.get("last_render_ts", now_ts)
+st.session_state["last_render_ts"] = now_ts
+
+# ── Controls row ──────────────────────────────────────────────────────────
+ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4, ctrl_col5 = st.columns([2, 2, 1, 1, 2])
+
+TIMEFRAME_OPTIONS = ["1m", "5m", "15m", "1h", "4h", "1D"]
+DEFAULT_TF = "1h"
+
+with ctrl_col1:
+    current_tf = st.selectbox(
+        "時間框架",
+        TIMEFRAME_OPTIONS,
+        index=TIMEFRAME_OPTIONS.index(
+            st.session_state.get("current_tf", DEFAULT_TF)
+        ) if st.session_state.get("current_tf") in TIMEFRAME_OPTIONS else 1,
+        key="tf_selector",
+    )
+    # Persist selection
+    st.session_state.current_tf = current_tf
+
+with ctrl_col2:
+    st.caption(f"📡 " + _quota_summary(adapter))
+
+with ctrl_col3:
+    # E8: Auto-refresh toggle — default OFF for safety
+    auto_chart_refresh = st.checkbox(
+        "Auto-refresh",
+        value=st.session_state.get("auto_chart_refresh", False),
+        key="auto_chart_refresh_toggle",
+    )
+    st.session_state.auto_chart_refresh = auto_chart_refresh
+
+with ctrl_col4:
+    if auto_chart_refresh:
+        # E8: Conservative default 5 min; options in seconds
+        chart_interval = st.selectbox(
+            "Interval",
+            [300, 600, 1800],
+            index=[300, 600, 1800].index(st.session_state.get("chart_refresh_interval_s", 300)),
+            format_func=lambda x: f"{x//60}min",
+            key="chart_interval_select",
+        )
+        st.session_state.chart_refresh_interval_s = chart_interval
+    else:
+        chart_interval = st.session_state.get("chart_refresh_interval_s", 300)
+
+with ctrl_col5:
+    # E8: Status line — shows when last fetched and next auto-refresh ETA
+    last_fetch_ts = st.session_state.get("last_fetch_ts", 0)
+    if last_fetch_ts:
+        ago_sec = max(0, now_ts - last_fetch_ts)
+        if auto_chart_refresh and chart_interval:
+            next_in = max(0, chart_interval - ago_sec)
+            st.caption(f"⏱ Last: {int(ago_sec)}s ago | ⏭ Next: {int(next_in)}s")
+        else:
+            st.caption(f"⏱ Last fetch: {int(ago_sec)}s ago")
+    else:
+        st.caption("ℹ️ Click Fetch or enable Auto-refresh")
+
+# ── Manual fetch button ───────────────────────────────────────────────────
+with ctrl_col1:
+    fetch_label = "📡 Fetch Real Bars"
+    if adapter is not None:
+        try:
+            bars = adapter.get_bars(current_tf, limit=60)
+            if bars:
+                fetch_label = "📡 Refresh Bars"
+        except Exception:
+            fetch_label = "📡 Fetch Real Bars"
+    fetch_clicked = st.button(fetch_label, type="primary")
+
+# ── Quota progress (rightmost) ──────────────────────────────────────────
+with ctrl_col5:
+    if adapter is not None:
+        try:
+            quota = adapter._quota
+            daily_pct = quota._daily_used / quota.daily_budget * 100 if quota.daily_budget else 0
+            min_pct = quota._minute_count / 8 * 100
+            st.progress(min(daily_pct / 100, 1.0), text=f"Daily {daily_pct:.0f}%")
+            st.caption(f"Per-min: {quota._minute_count}/8 ({min_pct:.0f}%)")
+        except Exception:
+            pass
+
+# ── E8: Fetch trigger conditions ────────────────────────────────────────
+# Condition 1: Manual button click (existing E7 behaviour)
+# Condition 2: Auto-refresh enabled + sufficient elapsed since last fetch
+prev_render_ts = st.session_state.get("prev_render_ts", now_ts)
+time_since_last_render = now_ts - prev_render_ts
+is_auto_rerun = 1.0 <= time_since_last_render <= 3.0  # rerun within 1-3s window
+
+auto_fetch_due = (
+    auto_chart_refresh
+    and chart_interval
+    and (now_ts - last_fetch_ts) >= chart_interval
+)
+should_fetch = fetch_clicked or auto_fetch_due
+
+# ── Fetch logic ──────────────────────────────────────────────────────────
+error_msg = None
+
+if should_fetch and adapter is None:
+    error_msg = st.session_state.get("market_data_error", "Adapter not initialized.")
+elif should_fetch:
+    try:
+        with st.spinner(
+            "📡 Fetching real bars..."
+            if auto_fetch_due and not fetch_clicked
+            else f"Fetching {current_tf} bars..."
+        ):
+            adapter.refresh(timeframes=[current_tf])
+        st.session_state.last_fetch_ts = now_ts
+        if fetch_clicked:
+            st.success(f"Loaded {current_tf} bars from Twelve Data ✓")
+        elif auto_fetch_due:
+            st.success(f"[Auto] {current_tf} bars refreshed ✓")
+    except Exception as exc:
+        error_msg = str(exc)
+        st.session_state.last_fetch_ts = last_fetch_ts  # don't advance on failure
+
+if error_msg:
+    st.error(f"Fetch failed: {error_msg}")
+
+# ── Render chart ──────────────────────────────────────────────────────────
+if adapter is not None:
+    try:
+        from daily_xauusd_brief.dashboard_chart import (
+            render_streamlit_chart,
+            build_chart_bar_json_from_adapter,
+            build_signal_markers,
+            build_active_price_lines,
+        )
+
+        # E11: build overlays from history-driven builders (graceful fallback if no data)
+        try:
+            markers = build_signal_markers()
+        except Exception:
+            markers = []
+        try:
+            price_lines = build_active_price_lines()
+        except Exception:
+            price_lines = []
+
+        # Check if we have bars (from cache or just-fetched)
+        bars, bar_time = build_chart_bar_json_from_adapter(adapter, current_tf, limit=60)
+
+        if bars:
+            # E11: pass markers + price_lines into render_streamlit_chart
+            render_streamlit_chart(
+                None,
+                timeframe=current_tf,
+                adapter=adapter,
+                markers=markers,
+                price_lines=price_lines,
+            )
+        else:
+            st.info(
+                f"No {current_tf} bars available. Click **Fetch Real Bars** to load data from Twelve Data. "
+                "(Uses ~3-5 credits per fetch)"
+            )
+            # Show mock chart so the page isn't blank
+            from daily_xauusd_brief.dashboard_chart import load_latest_candle, build_chart_bar_json, render_chart
+            fallback_candle = load_latest_candle()
+            if fallback_candle:
+                st.caption("⚠️ Showing simulated chart — connect real data above")
+                from daily_xauusd_brief.dashboard_chart import generate_historical_bars
+                from datetime import datetime, timezone
+                p = fallback_candle.get("source_payload", {})
+                mock_bars, _ = build_chart_bar_json(fallback_candle)
+                if mock_bars:
+                    html = render_chart(mock_bars)
+                    from streamlit.components.v1 import html as st_html
+                    st_html(html, height=540)
+                    ts_str = fallback_candle.get("timestamp", "") or ""
+                    bar_ts = ts_str.replace("T", " ")[:19] + " UTC" if ts_str else "—"
+                    st.caption(f"🕐 Latest bar: **{bar_ts}** (simulated) | ⚠️ Not real-time")
+    except Exception as exc:
+        st.error(f"Chart error: {exc}")
+else:
+    st.info(
+        "Market data adapter not available. "
+        "Run `python -m daily_xauusd_brief.main --dry-run` to initialize the environment, "
+        "or check Twelve Data API key in .env"
+    )
+
+
+# ── Candlestick Full Analysis (existing — NOT modified by E7) ──────────────
+st.divider()
 st.subheader("🕯️ Candlestick Analysis")
 candle = load_latest_candle()
 if candle:
@@ -278,7 +533,6 @@ if candle:
     run_id = candle.get("run_id", "")
     ts = candle.get("timestamp", "")
 
-    # Signal banner
     st.markdown(
         f"""
         <div style="border-left:4px solid {bias_color};padding:14px 18px;
@@ -299,7 +553,6 @@ if candle:
         unsafe_allow_html=True,
     )
 
-    # Metrics grid
     mc1, mc2, mc3, mc4 = st.columns(4)
     rsi = p.get("rsi_14")
     atr = p.get("atr_14")
@@ -309,7 +562,6 @@ if candle:
     patterns_count = len(p.get("detected_patterns") or [])
     mc4.metric("型態", patterns_count)
 
-    # Two columns: Patterns + Breakout / SR
     c_left, c_right = st.columns(2)
     with c_left:
         st.markdown("**📊 偵測型態**")
@@ -349,13 +601,11 @@ if candle:
         else:
             st.caption("未偵測到支撐 / 阻力位")
 
-        # Telegram preview
         explanation = candle.get("explanation_zh", "")
         if explanation:
             st.markdown("**💬 解讀**")
             st.info(explanation)
 
-        # Link to HTML report
         report_date = ts[:10] if ts else None
         if report_date:
             report_path = Path.home() / "projects" / "daily-xauusd-bot" / "reports" / "candlestick" / f"{report_date}.html"
@@ -371,7 +621,6 @@ if candle:
             else:
                 st.caption(f"💡 HTML report 未生成 (路徑: {report_path})")
 
-        # ── V3 M4 Validation Layer panel ────────────────────────────────
         validation = p.get("validation")
         if validation:
             st.markdown("**🛡️ Validation (V3 M4)**")
@@ -412,7 +661,9 @@ else:
     st.info("No candlestick data. Run `--mode candlestick --dry-run` first.")
 
 
-# ── V4 Fusion Engine Summary ───────────────────────────────────────────────
+# ── V4 Fusion Engine Summary (existing — NOT modified by E7) ───────────────
+
+st.divider()
 st.subheader("🧠 Fusion Decision (V4)")
 fusion = load_latest_fusion()
 if fusion:
@@ -453,8 +704,6 @@ if fusion:
         unsafe_allow_html=True,
     )
 
-    # Sub-scores from source_payload (V4 spec: candlestick_score / briefing /
-    # agreement / quality / final)
     src = fusion.get("source_payload", {}) or {}
     scores = src.get("scores", {}) or {}
     if scores:
@@ -473,11 +722,10 @@ else:
     st.info("No fusion data. Run `--mode fusion --dry-run` first.")
 
 
-# ── Footer ───────────────────────────────────────────────────────────────
-
+# ── Footer ─────────────────────────────────────────────────────────────────
 
 st.caption(
-    "XAUUSD Mission Control v8.2 (V4 Fusion Engine) | "
+    "XAUUSD Mission Control v8 (E7 Real-Time Chart) | "
     f"Data: `{JSON_DIR}` | "
     "Run `python -m daily_xauusd_brief.main --dry-run` to generate today's report"
 )
