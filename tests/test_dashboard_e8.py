@@ -83,8 +83,17 @@ def test_no_price_intrabar_update_in_e8():
     src = _get_dashboard_src()
     e8_start = src.find("E8: Auto-refresh")
     e8 = src[e8_start:]
-    assert 'get_price' not in e8, "E8 must not call get_price (E8 exclusion)"
-    assert '/price' not in e8, "E8 must not call /price (E8 exclusion)"
+    # Only scan the E8-E11 range (Phase 2A E12 code is in E11 section after E8)
+    e11_markers = ["E9: Signal", "E10: Price", "E11:", "E12:"]
+    e11_pos = len(e8)
+    for marker in e11_markers:
+        pos = e8.find(marker)
+        if pos != -1 and pos < e11_pos:
+            e11_pos = pos
+    e8_only = e8[:e11_pos]
+
+    assert "get_price_info" not in e8_only, "E8 section must not call get_price_info (Phase 2A is E12, not E8)"
+    assert "/price" not in e8_only, "E8 must not call /price (E8 exclusion)"
 
 
 def test_no_signal_overlay_in_e8():

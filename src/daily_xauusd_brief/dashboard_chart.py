@@ -237,6 +237,30 @@ def generate_historical_bars(anchor_close: float, anchor_high: float,
     return bars
 
 
+# ── Phase 2A: Intraday price freshness ────────────────────────────────────────
+
+def format_price_freshness(info: dict | None) -> str:
+    """Format price freshness as a display string.
+
+    Args:
+        info: dict with {price, timestamp, fresh} from adapter.get_price_info().
+              None if no adapter / no price available.
+    Returns:
+        Display string e.g. "⏱ intrabar: 14:32:05" or "⚠️ delayed: 14:31:42"
+    """
+    if info is None:
+        return ""
+    ts = info.get("timestamp")
+    if ts is None:
+        return ""
+    label = "⏱ intrabar" if info.get("fresh", True) else "⚠️ delayed"
+    # Convert UTC timestamp to HKT for display
+    hkt_ts = ts.replace(tzinfo=timezone.utc).astimezone(
+        __import__("datetime").timezone(datetime.now().astimezone().utcoffset())
+    )
+    return f"{label}: {hkt_ts.strftime('%H:%M:%S')} HKT"
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
@@ -617,6 +641,7 @@ def render_streamlit_chart(
     adapter=None,
     markers: list[dict] | None = None,
     price_lines: list[dict] | None = None,
+    price_freshness: dict | None = None,  # Phase 2A: intrabar freshness info
 ) -> None:
     """Streamlit-native chart render with optional real data adapter + markers + price lines.
 
@@ -686,5 +711,9 @@ def render_streamlit_chart(
         ),
         height=height + 40,
     )
+    # Phase 2A: intrabar freshness indicator at top-left
+    freshness_str = format_price_freshness(price_freshness)
+    if freshness_str:
+        st.caption(freshness_str)
     st.caption(f"🕐 Latest bar: **{bar_time}** | Chart: TradingView Lightweight Charts")
     st.caption(source_note)

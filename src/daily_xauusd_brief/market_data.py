@@ -411,6 +411,8 @@ class PollingMarketDataAdapter:
         self._client = _TwelveDataClient(api_key=self._key, quota=self._quota)
         self._store = store or CandleStore()
         self._last_refresh: Optional[datetime] = None
+        # Phase 2A: 30s TTL cache for intrabar price freshness
+        self._price_cache: dict = {"price": None, "timestamp": None}  # {price: float, timestamp: datetime}
 
     @property
     def store(self) -> CandleStore:
@@ -467,6 +469,37 @@ class PollingMarketDataAdapter:
     def get_price(self) -> float:
         """Get latest real-time price (1 credit)."""
         return self._client.get_price(self.SYMBOL)
+
+    def get_price_info(self, ttl_seconds: int = 30) -> dict:
+        """Get latest price with freshness metadata (Phase 2A intrabar path).
+
+        Uses a 30-second TTL cache to avoid redundant 1-credit API calls
+        during rapid auto-refresh cycles. Falls back to stale cache if the
+        API call fails, so callers always get {price, timestamp, fresh} even
+        under degraded conditions.
+
+        Returns:
+            dict with keys: price (float), timestamp (datetime), fresh (bool)
+        """
+        now = datetime.now(timezone.utc)
+        cached_price = self._price_cache.get("price")
+        cached_ts    = self._price_cache.get("timestamp")
+
+        if cached_price is not None and cached_ts is not None:
+            age = (now - cached_ts).total_seconds()
+            if age <= ttl_seconds:
+                return {"price": cached_price, "timestamp": cached_ts, "fresh": True}
+
+        # Cache miss or stale — try live fetch
+        try:
+            price = self._client.get_price(self.SYMBOL)
+            self._price_cache = {"price": price, "timestamp": now}
+            return {"price": price, "timestamp": now, "fresh": True}
+        except (QuotaExceeded, MarketDataError):
+            # Graceful fallback: return stale cache even if expired
+            if cached_price is not None:
+                return {"price": cached_price, "timestamp": cached_ts, "fresh": False}
+            raise  # no cache, no choice but to propagate
 
     def get_bars(self, timeframe: str, limit: int = 60) -> list[Candle]:
         """Read cached bars from the in-memory store.

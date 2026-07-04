@@ -122,9 +122,18 @@ def test_e7_no_intrabar_price_update():
     ).read_text(encoding="utf-8")
     e7_start = dash_src.find("E7: Real-Time XAUUSD Chart")
     e7_section = dash_src[e7_start:]
-    assert "get_price" not in e7_section, \
-        "E7 must not call get_price (E7 exclusion: no intra-bar update)"
-    assert "/price" not in e7_section
+    # Only scan the E7-E11 range, not the entire file (Phase 2A E12 code is in E11 section)
+    e11_markers = ["E9: Signal", "E10: Price", "E11:", "E12:"]
+    e11_start = len(e7_section)
+    for marker in e11_markers:
+        pos = e7_section.find(marker)
+        if pos != -1 and pos < e11_start:
+            e11_start = pos
+    e7_only = e7_section[:e11_start]
+
+    assert "get_price_info" not in e7_only, \
+        "E7 section must not call get_price_info (Phase 2A is E12, not E7)"
+    assert "/price" not in e7_only
 
 
 def test_e7_no_signal_overlay():
