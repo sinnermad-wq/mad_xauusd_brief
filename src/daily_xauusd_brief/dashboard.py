@@ -478,14 +478,23 @@ if adapter is not None:
         # Check if we have bars (from cache or just-fetched)
         bars, bar_time = build_chart_bar_json_from_adapter(adapter, current_tf, limit=60)
 
+        # Phase 2A: intrabar freshness — lightweight 1-credit call with 30s TTL cache
+        price_info = None
+        try:
+            price_info = adapter.get_price_info(ttl_seconds=30)
+        except Exception:
+            pass  # gracefully skip if adapter doesn't support it yet
+
         if bars:
             # E11: pass markers + price_lines into render_streamlit_chart
+            # Phase 2A: also pass price_freshness for intrabar indicator
             render_streamlit_chart(
                 None,
                 timeframe=current_tf,
                 adapter=adapter,
                 markers=markers,
                 price_lines=price_lines,
+                price_freshness=price_info,
             )
         else:
             st.info(
