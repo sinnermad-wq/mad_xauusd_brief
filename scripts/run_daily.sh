@@ -46,4 +46,13 @@ ${PYTHON_BIN} -m daily_xauusd_brief.main "$@"
 EXIT_CODE=$?
 
 echo "[$(date -Iseconds)] run_daily finished with exit code ${EXIT_CODE}"
+
+# --- 08:30 daily journal hook (only after successful pipeline run) ---
+if [[ "${EXIT_CODE:-1}" -eq 0 ]]; then
+    if [[ -f "${PROJECT_ROOT}/scripts/assemble_journal.py" ]]; then
+        echo "[$(date -Iseconds)] assembling daily journal for HKT today"
+        ${PYTHON_BIN} "${PROJECT_ROOT}/scripts/assemble_journal.py" || true
+    fi
+fi
+
 exit ${EXIT_CODE}

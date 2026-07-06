@@ -50,11 +50,16 @@ uv run python -m daily_xauusd_brief.main --dry-run
 
 ## Crons / Briefings
 
-- **XAUUSD cron** -- runs the pipeline in --dry-run and delivers the
+- **XAUUSD cron** — runs the pipeline in `--dry-run` and delivers the
   generated MD to Telegram.
-- **HK Briefing cron** -- uses the m2.7 model and delivers to WhatsApp.
+- **HK Briefing cron** — uses the `m2.7` model and delivers to WhatsApp.
 - Delivery channel IDs and API tokens are intentionally not stored in
   the repo (see below).
+
+After each scheduled run succeeds, `scripts/run_daily.sh` /
+`scripts/run_daily.bat` automatically invoke `scripts/assemble_journal.py`,
+which writes `daily_inputs/YYYY-MM-DD.md` and
+`reports/daily/YYYY-MM-DD.md`. See `AGENTS.md` for details.
 
 ## Secrets / Safety
 

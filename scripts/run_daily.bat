@@ -50,4 +50,12 @@ set "EXIT_CODE=%ERRORLEVEL%"
 
 echo [%DATE% %TIME%] run_daily finished with exit code !EXIT_CODE!
 
+REM --- 08:30 daily journal hook (only after successful pipeline run) ---
+if !EXIT_CODE! EQU 0 (
+    if exist "%PROJECT_ROOT%\scripts\assemble_journal.py" (
+        echo [%DATE% %TIME%] assembling daily journal for HKT today
+        call !PYTHON_BIN! "%PROJECT_ROOT%\scripts\assemble_journal.py"
+    )
+)
+
 endlocal & exit /b %EXIT_CODE%

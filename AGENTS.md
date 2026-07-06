@@ -115,4 +115,45 @@ test: 補上 MACD 邊界值測試
 - Twelve Data API docs: https://twelvedata.com/docs
 - NewsAPI docs: https://newsapi.org/docs
 - Telegram Bot API (Markdown): https://core.telegram.org/bots/api#markdown-style
-- pandas-ta: https://github.com/twopir...t/pandas-ta
+- pandas-ta: https://github.com/twop...t/pandas-ta
+
+---
+
+## 🗒️ Daily Journal Assembler
+
+`scripts/assemble_journal.py` 會喺每次 scheduled run (XAUUSD `fc5b9c31a1fd` /
+HK `264e15bbd8dc`) 成功之後自動產出:
+
+- `daily_inputs/YYYY-MM-DD.md` — 結構化原始資料（cron outputs、pipeline log、gold report、Hermes CLI status）
+- `reports/daily/YYYY-MM-DD.md`  — 整理後嘅 markdown 日誌
+
+### Inputs
+
+- `~/AppData/Local/hermes/cron/output/<job_id>/YYYY-MM-DD_HH-MM-SS.md`
+- `logs/daily-xauusd-brief.log`
+- `logs/last_dryrun.log`
+- `reports/gold/YYYY-MM-DD.md`（如存在）
+
+### Status priority
+
+1. `hermes cronjob list` CLI（single source of truth；cached per run）
+2. Fallback: scan raw cron output for `FAILED` keyword
+
+### Failure semantics
+
+- 兩條 cron 都 missing → fail-fast `exit 2`（避免 fabricate journal）
+- 輸出已存在 → append HTML re-run comment（idempotent）
+
+### Hook point
+
+`scripts/run_daily.sh` / `scripts/run_daily.bat` — 喺 `main.py` exit code
+係 0 後自動召喚 assembler；不過手動單跑亦可:
+
+```bash
+python scripts/assemble_journal.py                # today HKT
+python scripts/assemble_journal.py 2026-07-06     # 指定日期
+```
+
+Hooked into:
+- `scripts/run_daily.bat` / `run_daily.sh` — invoked after the
+  08:30 HKT scheduled run succeeds (see cron prompt for fc5b9c31a1fd).
