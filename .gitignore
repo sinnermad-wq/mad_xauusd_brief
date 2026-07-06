@@ -1,47 +1,39 @@
 # Python
 __pycache__/
 *.py[cod]
-*.so
-.Python
-*.egg-info/
-.eggs/
-dist/
-build/
-
-# Virtualenv
-.venv/
-venv/
-
-# Testing
+*$py.class
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
 htmlcov/
 
-# IDE
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets / config
+.env
+.env.*
+.streamlit/secrets.toml
+
+# Editor / OS
+.DS_Store
 .vscode/
 .idea/
 *.swp
-
-# Environment (secrets)
-.env
-.env.local
-.env.*.local
-
-# Project generated data (large, not needed in repo)
-data/raw/
-data/cache/
-data/history/
-reports/
-logs/
-*.html
-
-# Streamlit
-.streamlit/secrets.toml
-
-# OS
-.DS_Store
 Thumbs.db
 
-# Temp
-*.tmp
+# Logs / temp
+*.log
+logs/
 tmp/
+temp/
+
+# Local data and caches
+data/cache/
+data/history/
+data/raw/
+reports/
