@@ -366,6 +366,7 @@ async def cmd_full(cfg: Config, base_dir: Path) -> int:
             tg_text,
             bot_token=cfg.telegram_bot_token,
             chat_id=cfg.telegram_chat_id,
+            fail_quiet=not bool(cfg.telegram_bot_token and cfg.telegram_chat_id),
         )
         logger.info("Telegram sent via Bot API: %s", result.get("result", {}).get("message_id"))
     except TelegramSendError as exc:
@@ -398,6 +399,7 @@ async def cmd_send_only(cfg: Config, base_dir: Path) -> int:
             tg_text,
             bot_token=cfg.telegram_bot_token,
             chat_id=cfg.telegram_chat_id,
+            fail_quiet=not bool(cfg.telegram_bot_token and cfg.telegram_chat_id),
         )
         logger.info("Telegram re-sent: %s", result.get("result", {}).get("message_id"))
     except TelegramSendError as exc:
@@ -741,7 +743,9 @@ async def _cmd_fusion(cfg, base_dir: Path, dry_run: bool = False) -> int:
     _fusion_logger.info("[Fusion] === V4 Fusion Engine started ===")
 
     cand_dir = base_dir / "data" / "history" / "candlestick"
-    brief_dir = base_dir / "data" / "history" / "briefing"
+    # Briefing lives in the same data/history/ directory as the daily reports.
+    # Files are named *_<mode>.json, e.g. 2026-06-28T08-30-49_daily.json
+    brief_dir = base_dir / "data" / "history"
 
     # 1. Load latest candle
     candle_files = (
@@ -760,7 +764,7 @@ async def _cmd_fusion(cfg, base_dir: Path, dry_run: bool = False) -> int:
         _fusion_logger.error("[Fusion] failed to load candlestick: %s", e)
         return 1
 
-    # 2. Load latest briefing (optional)
+    # 2. Load latest briefing (optional, degrades gracefully)
     briefing_payload = None
     brief_files = (
         sorted(brief_dir.glob("*_daily.json"), reverse=True)

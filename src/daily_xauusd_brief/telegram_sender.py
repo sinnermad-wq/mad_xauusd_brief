@@ -149,6 +149,7 @@ async def send_brief(
     bot_token: str | None = None,
     chat_id: str | None = None,
     prefer: str = "bot_api",
+    fail_quiet: bool = False,
 ) -> dict[str, Any]:
     """Main entry: 發送 Telegram 訊息。
 
@@ -157,9 +158,12 @@ async def send_brief(
         bot_token: Telegram Bot API token。如 None，會讀 $TELEGRAM_BOT_TOKEN。
         chat_id: Telegram chat id。如 None，會讀 $TELEGRAM_CHAT_ID。
         prefer: "bot_api" (default) or "hermes"。
+        fail_quiet: True 時 Bot API token + chat 缺失會 log warning 並 return {}
+                  而非 raise。適合 mission-control dashboard / dry-run 等非交付路徑。
 
     Returns:
         Bot API path 回傳 Telegram API JSON；若走 Hermes path 會 raise。
+        若 fail_quiet=True 而 token 缺失，回傳 {} (no-op success).
 
     Raises:
         TelegramSendError: 發送所有ハチ。
@@ -168,8 +172,8 @@ async def send_brief(
     chat_id = chat_id or os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
     logger.info(
-        "send_brief called (len=%d, prefer=%s, bot_token_present=%s, chat_id_present=%s)",
-        len(text), prefer, bool(bot_token), bool(chat_id),
+        "send_brief called (len=%d, prefer=%s, bot_token_present=%s, chat_id_present=%s, fail_quiet=%s)",
+        len(text), prefer, bool(bot_token), bool(chat_id), fail_quiet,
     )
 
     if prefer == "hermes":
@@ -178,6 +182,12 @@ async def send_brief(
     # Bot API path —必填 token + chat
     if not bot_token or not chat_id:
         msg = "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set to send via Bot API"
+        if fail_quiet:
+            logger.warning(
+                "%s — fail_quiet=True, returning no-op success (no Telegram delivery).",
+                msg,
+            )
+            return {}
         logger.error(msg)
         raise TelegramSendError(msg)
 
