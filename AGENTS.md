@@ -285,6 +285,12 @@ writer.writeheader(); writer.writerows(rows)
 - ❌ 唔自動寫入 journal assembler
 - ✅ `log_engine_review.py` 需要人喺 chat 主動 trigger
 
+### Rule Change Protocol
+
+任何 calibration 或 analytical rule 的改動，必須跟 `docs/rule_change_protocol.md` 的流程：
+提出 → 審批 → 1週驗證 → 4週驗證 → 月報記錄。
+Rule changes 記錄喺 `docs/rule_changes.md`（append-only）。
+
 ### update_engine_review.py — 驗證窗口期滿後更新結果
 
 ```bash
