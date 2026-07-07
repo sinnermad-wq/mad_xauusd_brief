@@ -1,20 +1,20 @@
 """
 XAUUSD Mission Control Dashboard
-v8 — E7: Real-Time Chart with PollingMarketDataAdapter
+v9 — Ops Health block: read-only workflow observability panel
 
-E7 responsibilities:
-  1. Initialize PollingMarketDataAdapter on first load
-  2. Timeframe selector with session_state persistence
-  3. Manual "Fetch Real Bars" button → adapter.refresh() + render_streamlit_chart
-  4. Display latest bar time / data source / quota summary
-  5. CandleStore cache → last successful bars visible even if quota exhausted
+E9 responsibilities:
+  1. Ops Health section: reuses query_engine_ops.py via subprocess (JSON mode)
+  2. Shows: total/success/error runs, success rate, avg/max duration,
+     recent runs list, per-script breakdown, error-type breakdown
+  3. Error rate warning when > 20% in last 7 days
+  4. Read-only: no writes, no cron, no webhook
+  5. 60-second cache TTL on ops summary
 
-Does NOT (E7 exclusions):
-  - No auto-refresh for chart (user manually clicks Fetch)
-  - No /price intra-bar update
-  - No signal overlay
-  - No WebSocket
-  - Does NOT modify existing candlestick/fusion/briefing panels
+Does NOT:
+  - Modify trading logic
+  - Change engine_reviews.csv schema
+  - Add cron/webhook/daemon
+  - Write any data back
   - Does NOT touch existing auto-refresh control
 
 Reads from:
@@ -670,6 +670,88 @@ else:
     st.info("No candlestick data. Run `--mode candlestick --dry-run` first.")
 
 
+# ── Engine Reviews ─────────────────────────────────────────────────────────
+st.divider()
+st.subheader("🛰️ Engine Reviews")
+
+REVIEWS_CSV = BASE_DIR / "data" / "engine_reviews.csv"
+
+def _load_reviews() -> pd.DataFrame | None:
+    if not REVIEWS_CSV.exists():
+        return None
+    try:
+        df = pd.read_csv(REVIEWS_CSV, dtype=str, keep_default_na=False)
+        # Parse confidence as numeric for aggregation
+        df["_conf_num"] = pd.to_numeric(df["confidence"], errors="coerce")
+        # Parse created_at for sorting
+        df["_created"] = pd.to_datetime(df.get("created_at", ""), errors="coerce")
+        return df
+    except Exception:
+        return None
+
+reviews_df = _load_reviews()
+
+if reviews_df is None or reviews_df.empty:
+    st.info(f"No engine reviews yet. Run `python scripts/log_engine_review.py --input <snapshot.json>` to log an analysis.")
+else:
+    col1, col2, col3, col4 = st.columns(4)
+
+    total = len(reviews_df)
+    avg_conf = reviews_df["_conf_num"].mean()
+    # outcome_label ratio
+    has_outcome = reviews_df[reviews_df["outcome_label"] != ""]
+    correct_pct = (
+        (has_outcome["outcome_label"] == "correct").sum() / len(has_outcome) * 100
+        if len(has_outcome) > 0 else None
+    )
+    invalidation_pct = (
+        (reviews_df["invalidation_hit"].str.lower() == "true").sum() / total * 100
+        if "invalidation_hit" in reviews_df.columns else None
+    )
+    insufficient_count = (reviews_df["insufficient_context"].str.lower() == "true").sum()
+    ma200_ratio = (
+        (reviews_df["ma200_available"].str.lower() == "true").sum() / total * 100
+        if "ma200_available" in reviews_df.columns else None
+    )
+
+    col1.metric("Total Reviews", total)
+    col2.metric("Avg Confidence", f"{avg_conf:.1f}" if pd.notna(avg_conf) else "—")
+    col3.metric("Correct %", f"{correct_pct:.0f}%" if correct_pct is not None else "—")
+    col4.metric("Invalidation Hit %", f"{invalidation_pct:.0f}%" if invalidation_pct is not None else "—")
+
+    st.markdown("**📋 Latest 20 Reviews**")
+    disp_cols = [
+        "date", "hkt_time", "session", "symbol", "direction_classification",
+        "bias", "confidence", "confidence_bucket", "invalidation_level",
+        "outcome_label", "insufficient_context",
+    ]
+    disp = reviews_df.sort_values("_created", ascending=False).head(20)[disp_cols]
+    st.dataframe(disp, use_container_width=True, hide_index=True)
+
+    st.markdown("**📊 Breakdowns**")
+    b1, b2, b3 = st.columns(3)
+    with b1:
+        st.caption("By Session")
+        sess = reviews_df["session"].value_counts().reset_index()
+        sess.columns = ["session", "count"]
+        st.dataframe(sess, use_container_width=True, hide_index=True)
+    with b2:
+        st.caption("By Direction Classification")
+        dcc = reviews_df["direction_classification"].value_counts().reset_index()
+        dcc.columns = ["direction_classification", "count"]
+        st.dataframe(dcc, use_container_width=True, hide_index=True)
+    with b3:
+        st.caption("By Confidence Bucket")
+        cb = reviews_df["confidence_bucket"].value_counts().reset_index()
+        cb.columns = ["confidence_bucket", "count"]
+        st.dataframe(cb, use_container_width=True, hide_index=True)
+
+    st.markdown("**🔍 Data Quality**")
+    dq1, dq2 = st.columns(2)
+    dq1.metric("`insufficient_context=true` count", int(insufficient_count))
+    dq2.metric("MA200 available ratio", f"{ma200_ratio:.0f}%" if ma200_ratio is not None else "—")
+
+
 # ── V4 Fusion Engine Summary (existing — NOT modified by E7) ───────────────
 
 st.divider()
@@ -731,10 +813,107 @@ else:
     st.info("No fusion data. Run `--mode fusion --dry-run` first.")
 
 
+# ── Ops Health (read-only) ──────────────────────────────────────────────────
+# Reuses query_engine_ops.py — no duplicate aggregation logic.
+# Manual-only: no writes, no cron, no webhooks.
+
+st.divider()
+st.subheader("🛰️ Ops Health")
+
+_OPS_JSONL = BASE_DIR / "data" / "engine_ops_events.jsonl"
+_OPS_SCRIPT = BASE_DIR / "scripts" / "query_engine_ops.py"
+
+@st.cache_data(ttl=60)
+def _load_ops_summary(days=7) -> dict | None:
+    """Call query_engine_ops.py --format json and parse. Returns None if no data."""
+    import subprocess, json as _json
+    python_bin = sys.executable
+    try:
+        result = subprocess.run(
+            [python_bin, str(_OPS_SCRIPT), "--format", "json",
+             "--days", str(days), "--limit", "20"],
+            capture_output=True, text=True, timeout=15,
+            cwd=str(BASE_DIR),
+        )
+        if result.returncode != 0:
+            return None
+        return _json.loads(result.stdout)
+    except Exception:
+        return None
+
+ops = _load_ops_summary()
+
+if ops is None or ops.get("time_window", {}).get("total_events", 0) == 0:
+    st.info("No ops events found. Run a review/report script to generate events.")
+else:
+    total = ops["time_window"]["total_events"]
+    success = ops["status_counts"]["success"]
+    error = ops["status_counts"]["error"]
+    success_rate = ops["status_counts"]["success_rate"]
+    error_rate = ops["status_counts"]["error_rate"]
+    avg_ms = ops["duration"]["avg_ms"]
+    max_ms = ops["duration"]["max_ms"]
+
+    # High error rate warning (>20%)
+    if error_rate > 20:
+        st.warning(f"⚠️ High error rate: {error_rate}% ({error} errors / {total} runs in 7 days)")
+
+    # Top-row metrics
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Total Runs", total)
+    m2.metric("Success", success)
+    m3.metric("Errors", error)
+    m4.metric("Success Rate", f"{success_rate:.0f}%")
+    m5.metric("Avg / Max ms", f"{avg_ms:.1f} / {max_ms:.0f}")
+
+    # Two-column lower section: recent events + breakdown
+    r_col, b_col = st.columns([1, 1])
+
+    with r_col:
+        st.markdown("**📋 Recent Runs**")
+        # Reuse --recent from the query script
+        import subprocess as _sub
+        python_bin = sys.executable
+        try:
+            recent_result = _sub.run(
+                [python_bin, str(_OPS_SCRIPT), "--recent", "--limit", "15", "--days", "7"],
+                capture_output=True, text=True, timeout=15, cwd=str(BASE_DIR),
+            )
+            if recent_result.returncode == 0:
+                # Print first 15 lines of --recent output
+                lines = recent_result.stdout.strip().split("\n")
+                for line in lines[1:]:  # skip header "Recent Events"
+                    if line.strip():
+                        st.caption(line)
+        except Exception:
+            st.caption("(failed to load recent events)")
+
+    with b_col:
+        # Script breakdown
+        st.markdown("**📊 By Script**")
+        for sname, sdata in ops.get("script_counts", {}).items():
+            s_rate = (sdata["success"] / sdata["count"] * 100) if sdata["count"] else 0
+            st.caption(
+                f"- {sname}: {sdata['count']} runs, "
+                f"✅{sdata['success']} ❌{sdata['error']}, "
+                f"avg={sdata['avg_ms']}ms, max={sdata['max_ms']}ms"
+            )
+
+        # Error breakdown
+        etypes = ops.get("error_types", {})
+        if etypes:
+            st.markdown("**⚠️ Error Types**")
+            for et, ec in etypes.items():
+                lt = ops.get("latest_error_per_type", {}).get(et, {})
+                lt_time = (lt.get("finished_at") or "—")[:19]
+                lt_script = lt.get("script_name") or "—"
+                st.caption(f"- {et}: {ec}x  (latest: {lt_time} @ {lt_script})")
+
+
 # ── Footer ─────────────────────────────────────────────────────────────────
 
 st.caption(
-    "XAUUSD Mission Control v8 (E7 Real-Time Chart) | "
+    "XAUUSD Mission Control v9 (E9 Ops Health) | "
     f"Data: `{JSON_DIR}` | "
     "Run `python -m daily_xauusd_brief.main --dry-run` to generate today's report"
 )
