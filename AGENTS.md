@@ -406,6 +406,38 @@ Rule Change Candidates / Next Month Actions
 - `generate_engine_weekly_report.py`
 - `generate_engine_monthly_report.py`
 
+### query_engine_ops.py — observability query CLI
+
+`scripts/query_engine_ops.py` — ad-hoc CLI to query and summarize engine ops events.
+Reads `data/engine_ops_events.jsonl` (default; overridable via `--input`).
+
+```bash
+# default: summary (last 7 days)
+python scripts/query_engine_ops.py
+
+# explicit modes
+python scripts/query_engine_ops.py --summary
+python scripts/query_engine_ops.py --recent                # last 20 events
+python scripts/query_engine_ops.py --errors                 # error breakdown
+python scripts/query_engine_ops.py --slowest                # top 20 by duration_ms
+
+# filters (apply to all modes)
+python scripts/query_engine_ops.py --days 30
+python scripts/query_engine_ops.py --script-name log_engine_review.py
+python scripts/query_engine_ops.py --status error
+python scripts/query_engine_ops.py --limit 10 --recent
+python scripts/query_engine_ops.py --format json            # machine-readable output
+```
+
+**Output fields:**
+- `--summary` → time window, total events, success/error counts + rates, per-script
+  count/success/error/avg_ms/max_ms, top error types, duration avg/p50/p95/max in ms
+- `--recent` → last N events with finished_at, script_name, status, duration_ms, review_id, output_path, error_type
+- `--errors` → groups by error_type with count + latest_finished_at + latest_script
+- `--slowest` → ranks by duration_ms desc with full event context
+
+Manual-only; does not touch engine / pipeline / cron.
+
 ### 保證
 
 - ✅ Success + error 都記錄，唔少任何 event
