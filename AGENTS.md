@@ -436,7 +436,39 @@ python scripts/query_engine_ops.py --format json            # machine-readable o
 - `--errors` → groups by error_type with count + latest_finished_at + latest_script
 - `--slowest` → ranks by duration_ms desc with full event context
 
-Manual-only; does not touch engine / pipeline / cron.
+Manual-only query CLI; does not touch engine / pipeline / cron.
+
+### validate_engine_reviews.py — read-only CSV data-quality validator
+
+`scripts/validate_engine_reviews.py` — validates `data/engine_reviews.csv` without
+writing anything. Useful before generating weekly/monthly reports.
+
+```bash
+# default text output
+python scripts/validate_engine_reviews.py
+
+# machine-readable output
+python scripts/validate_engine_reviews.py --format json
+
+# strict mode — exit non-zero on duplicate_id / bad confidence / missing fields
+python scripts/validate_engine_reviews.py --strict
+
+# filter by symbol / stale threshold
+python scripts/validate_engine_reviews.py --symbol GC=F --days 7
+```
+
+**Checks performed:**
+- Missing required fields
+- Invalid session / direction_classification / outcome_label / confidence_bucket enums
+- Confidence out of 0-100 range
+- Duplicate review_id
+- Pending outcomes (empty outcome_label)
+- Stale rows (not updated in N+ days)
+- Sample size for weekly (>=3 rows) / monthly (>=12 rows) reports
+
+**Exit codes:** 0 = OK, 1 = critical issue (--strict), 2 = file not found
+
+Manual-only; does NOT modify CSV / dashboard / cron / run_daily.sh.
 
 ### 保證
 
