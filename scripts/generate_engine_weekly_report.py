@@ -29,6 +29,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from engine_ops_logger import track, log_event
+
 _HKT = timezone(timedelta(hours=8))
 
 DEFAULT_CSV = Path.home() / "projects" / "daily-xauusd-bot" / "data" / "engine_reviews.csv"
@@ -433,23 +435,27 @@ def main() -> None:
     if week_end < week_start:
         parser.error("--week-end must not be before --week-start")
 
-    rows = load_reviews(args.input)
-    filtered = filter_week(rows, week_start, week_end, args.symbol)
-    summary = compute_summary(filtered)
-    now_iso = datetime.now(_HKT).isoformat(timespec="seconds")
-    md = render_report(week_start, week_end, args.symbol, filtered, summary, now_iso)
+    ev_meta = {"dry_run": args.dry_run, "week_start": week_start, "week_end": week_end}
 
-    if args.dry_run:
-        print(md)
-        return
+    with track(script_name="generate_engine_weekly_report.py", metadata=ev_meta) as ev:
+        rows = load_reviews(args.input)
+        filtered = filter_week(rows, week_start, week_end, args.symbol)
+        summary = compute_summary(filtered)
+        now_iso = datetime.now(_HKT).isoformat(timespec="seconds")
+        md = render_report(week_start, week_end, args.symbol, filtered, summary, now_iso)
 
-    out_path = args.output
-    if out_path is None:
-        out_path = DEFAULT_OUT_DIR / f"weekly-{week_start}.md"
+        if args.dry_run:
+            print(md)
+            ev.update(status="success", rows_affected=0, output_path="stdout")
+            return
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(md, encoding="utf-8")
-    print(f"OK|{out_path}")
+        out_path = args.output
+        if out_path is None:
+            out_path = DEFAULT_OUT_DIR / f"weekly-{week_start}.md"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(md, encoding="utf-8")
+        print(f"OK|{out_path}")
+        ev.update(status="success", output_path=str(out_path), rows_affected=1)
 
 
 if __name__ == "__main__":

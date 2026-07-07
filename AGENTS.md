@@ -365,7 +365,51 @@ Direction Breakdown / Confidence Calibration / Failure Reasons / Drift Pattern N
 Rule Change Candidates / Next Month Actions
 
 規則：
-- `month` 格式 YYYY-MM；不合格式自動 error exit 2
-- `total_reviews < 10` → ⚠️ Sample size warning
 - 冇資料 → 仍生成 "No Data" section
+- `total_reviews < 10` → ⚠️ Sample size warning
+- 非法 month 格式 → exit 2
 - Manual-only，唔自動排程，唔改 dashboard 寫入邏輯
+
+---
+
+## 🛰️ Workflow Observability
+
+每個 engine review script 執行時，會自動 append 一條 JSONL event 落 `data/engine_ops_events.jsonl`，記錄 script run 結果。
+
+### 共用 helper
+
+`scripts/engine_ops_logger.py` 提供兩個 API：
+- `log_event(...)` — 手動 append 事件，唔拋例外
+- `track(script_name, ...)` — context manager，自動捕捉 `started_at` / `duration_ms` / status / exception type
+
+### Event Schema (每行一個 JSON object)
+
+| Field | Type | Description |
+|---|---|---|
+| event_type | string | 永遠 `script_run` |
+| script_name | string | e.g. `log_engine_review.py` |
+| started_at | ISO timestamp (HKT) | script 開始時間 |
+| finished_at | ISO timestamp (HKT) | script 結束時間 |
+| duration_ms | int | 執行 millisecond |
+| status | `success` | `error` |
+| error_type | string | 例外類別（error 時） |
+| error_message | string | 例外訊息（error 時） |
+| review_id | string | review 行 ID（若適用） |
+| output_path | string | 寫入嘅 file path or `stdout` |
+| rows_affected | int | changed/added rows |
+| metadata | object | script-specific metadata (dry_run, week, month, symbol etc.) |
+
+### 已記錄 events 嘅 scripts
+
+- `log_engine_review.py`
+- `update_engine_review.py`
+- `generate_engine_weekly_report.py`
+- `generate_engine_monthly_report.py`
+
+### 保證
+
+- ✅ Success + error 都記錄，唔少任何 event
+- ✅ Logger 失敗 warn 唔 crash 主流程
+- ✅ 保留原有 stdout/exit contract（`OK|...`、`[DRY RUN]` 等依然有效）
+- ✅ Manual-only：唔接 cron / webhook / daemon
+- ✅ Dashboard + `run_daily.sh` 完全 unchanged

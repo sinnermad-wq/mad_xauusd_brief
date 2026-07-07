@@ -40,6 +40,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
 
+from engine_ops_logger import track, log_event
+
 _HKT = timezone(timedelta(hours=8))
 
 # ── Enums ────────────────────────────────────────────────────────────────────
@@ -269,32 +271,54 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    result = None
+    errored = False
+
     try:
-        result = update_review(
-            review_id=args.review_id,
-            validation_price=args.validation_price,
-            max_favorable_move=args.max_favorable_move,
-            max_adverse_move=args.max_adverse_move,
-            invalidation_hit=args.invalidation_hit,
-            outcome_label=args.outcome_label,
-            review_score=str(args.review_score) if args.review_score is not None else None,
-            failure_reason=args.failure_reason,
-            lesson=args.lesson,
-            next_adjustment=args.next_adjustment,
-            notes=args.notes,
-            force=args.force,
-            dry_run=args.dry_run,
-        )
-    except FileNotFoundError as e:
-        sys.stderr.write(f"ERROR: {e}\n")
-        sys.exit(1)
-    except ValueError as e:
-        sys.stderr.write(f"ERROR: {e}\n")
-        sys.exit(1)
-    except ValidationError as e:
-        sys.stderr.write(f"VALIDATION ERROR: {e}\n")
+        with track(script_name="update_engine_review.py",
+                   metadata={"dry_run": args.dry_run}) as ev:
+            try:
+                result = update_review(
+                    review_id=args.review_id,
+                    validation_price=args.validation_price,
+                    max_favorable_move=args.max_favorable_move,
+                    max_adverse_move=args.max_adverse_move,
+                    invalidation_hit=args.invalidation_hit,
+                    outcome_label=args.outcome_label,
+                    review_score=str(args.review_score) if args.review_score is not None else None,
+                    failure_reason=args.failure_reason,
+                    lesson=args.lesson,
+                    next_adjustment=args.next_adjustment,
+                    notes=args.notes,
+                    force=args.force,
+                    dry_run=args.dry_run,
+                )
+            except FileNotFoundError as e:
+                sys.stderr.write(f"ERROR: {e}\n")
+                errored = True
+                raise RuntimeError(str(e)) from e
+            except ValueError as e:
+                sys.stderr.write(f"ERROR: {e}\n")
+                errored = True
+                raise RuntimeError(str(e)) from e
+            except ValidationError as e:
+                sys.stderr.write(f"VALIDATION ERROR: {e}\n")
+                errored = True
+                raise RuntimeError(str(e)) from e
+
+            ev.update(
+                review_id=result["review_id"],
+                output_path=result["path"],
+                rows_affected=0 if args.dry_run else 1,
+                status="success",
+            )
+    except RuntimeError:
+        pass  # error already handled; re-raise from track() → log + exit
+
+    if errored:
         sys.exit(1)
 
+    # Success path
     if args.dry_run:
         print(f"[DRY RUN] review_id: {result['review_id']}")
         print(f"[DRY RUN] CSV path:   {result['path']}")

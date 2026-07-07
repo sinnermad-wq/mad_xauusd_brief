@@ -18,6 +18,8 @@ from pathlib import Path
 from statistics import median
 from typing import Any
 
+from engine_ops_logger import track, log_event
+
 _HKT = timezone(timedelta(hours=8))
 
 DEFAULT_CSV = Path.home() / "projects" / "daily-xauusd-bot" / "data" / "engine_reviews.csv"
@@ -563,23 +565,28 @@ def main() -> None:
     args = parser.parse_args()
 
     first, last = month_boundaries(args.month)
-    rows = load_reviews(args.input)
-    filtered = filter_month(rows, first, last, args.symbol)
-    summary = build_summary(filtered)
-    now_iso = datetime.now(_HKT).isoformat(timespec="seconds")
-    md = render(args.month, first, last, args.symbol, filtered, summary, now_iso)
+    ev_meta = {"dry_run": args.dry_run, "month": args.month,
+               "month_first": first, "month_last": last}
 
-    if args.dry_run:
-        print(md)
-        return
+    with track(script_name="generate_engine_monthly_report.py", metadata=ev_meta) as ev:
+        rows = load_reviews(args.input)
+        filtered = filter_month(rows, first, last, args.symbol)
+        summary = build_summary(filtered)
+        now_iso = datetime.now(_HKT).isoformat(timespec="seconds")
+        md = render(args.month, first, last, args.symbol, filtered, summary, now_iso)
 
-    out_path = args.output
-    if out_path is None:
-        out_path = DEFAULT_OUT_DIR / f"monthly-{args.month}.md"
+        if args.dry_run:
+            print(md)
+            ev.update(status="success", rows_affected=0, output_path="stdout")
+            return
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(md, encoding="utf-8")
-    print(f"OK|{out_path}")
+        out_path = args.output
+        if out_path is None:
+            out_path = DEFAULT_OUT_DIR / f"monthly-{args.month}.md"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(md, encoding="utf-8")
+        print(f"OK|{out_path}")
+        ev.update(status="success", output_path=str(out_path), rows_affected=1)
 
 
 if __name__ == "__main__":

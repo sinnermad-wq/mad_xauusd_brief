@@ -60,13 +60,15 @@ enforced; schema validation errors prevent append and print a clear message.
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 import uuid
+import csv
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
+
+from engine_ops_logger import track, log_event
 
 _HKT = timezone(timedelta(hours=8))
 
@@ -307,22 +309,50 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    try:
-        data = _load_input(args.input_path)
-    except json.JSONDecodeError as e:
-        sys.stderr.write(f"ERROR: Invalid JSON input: {e}\n")
-        sys.exit(1)
-    except FileNotFoundError as e:
-        sys.stderr.write(f"ERROR: File not found: {e}\n")
-        sys.exit(1)
+    ev_metadata = {"dry_run": args.dry_run}
+    result = None
+    errored = False
 
     try:
-        row = _build_row(data, dry_run=args.dry_run)
-        result = append_review(row, dry_run=args.dry_run)
-    except ValueError as e:
-        sys.stderr.write(f"VALIDATION ERROR: {e}\n")
+        with track(script_name="log_engine_review.py", metadata=ev_metadata) as ev:
+            try:
+                data = _load_input(args.input_path)
+            except json.JSONDecodeError as e:
+                error_type = "JSONDecodeError"
+                error_msg = f"Invalid JSON input: {e}"
+                sys.stderr.write(f"ERROR: {error_msg}\n")
+                errored = True
+                # track __exit__ will re-raise — log it as error there
+                raise RuntimeError(error_msg) from e
+            except FileNotFoundError as e:
+                error_type = "FileNotFoundError"
+                error_msg = f"File not found: {e}"
+                sys.stderr.write(f"ERROR: {error_msg}\n")
+                errored = True
+                raise RuntimeError(error_msg) from e
+
+            try:
+                row = _build_row(data, dry_run=args.dry_run)
+                result = append_review(row, dry_run=args.dry_run)
+            except ValueError as e:
+                sys.stderr.write(f"VALIDATION ERROR: {e}\n")
+                errored = True
+                raise RuntimeError(str(e)) from e
+
+            ev.update(
+                review_id=result["review_id"],
+                output_path=str(result["path"]),
+                rows_affected=0 if args.dry_run else 1,
+                status="success",
+            )
+    except RuntimeError:
+        # Error already handled / stderr written above; re-raise so we exit 1
+        pass
+
+    if errored:
         sys.exit(1)
 
+    # Success path
     if args.dry_run:
         print(f"[DRY RUN] review_id: {result['review_id']}")
         print(f"[DRY RUN] CSV path:  {result['path']}")
