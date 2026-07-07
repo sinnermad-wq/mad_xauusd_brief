@@ -284,3 +284,35 @@ writer.writeheader(); writer.writerows(rows)
 - ❌ 唔新增 cron
 - ❌ 唔自動寫入 journal assembler
 - ✅ `log_engine_review.py` 需要人喺 chat 主動 trigger
+
+### update_engine_review.py — 驗證窗口期滿後更新結果
+
+```bash
+# 驗證期滿後，更新 outcome（例如 4h / session_close / next_day 後）
+python scripts/update_engine_review.py \
+    --review-id GC-F_2026-07-07_103257_14afec \
+    --outcome-label correct \
+    --review-score 4 \
+    --validation-price 4168.3 \
+    --max-favorable-move 22.1 \
+    --max-adverse-move 8.4 \
+    --invalidation-hit false \
+    --failure-reason none \
+    --lesson "bearish_continuation confirmed at NY close"
+
+# 部分更新（只填你確定的欄位）
+python scripts/update_engine_review.py \
+    --review-id GC-F_2026-07-07_103257_14afec \
+    --outcome-label correct \
+    --review-score 4
+
+# 強制覆蓋（已有 outcome_label 仍要改）
+python scripts/update_engine_review.py --review-id ... --outcome-label wrong --force
+```
+
+規則：
+- 找不到 `review_id` → exit 1
+- 已有 `outcome_label` 未加 `--force` → 拒絕覆蓋
+- `--force` → 可強制覆蓋
+- 所有更新寫入 temp file 再 replace（atomic）
+- `updated_at` 自動更新為 ISO timestamp
