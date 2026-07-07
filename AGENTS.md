@@ -157,3 +157,64 @@ python scripts/assemble_journal.py 2026-07-06     # 指定日期
 Hooked into:
 - `scripts/run_daily.bat` / `run_daily.sh` — invoked after the
   08:30 HKT scheduled run succeeds (see cron prompt for fc5b9c31a1fd).
+
+---
+
+## 🛰️ Candlestick Direction Engine (manual-only)
+
+`src/daily_xauusd_brief/direction_engine.py` — multi-timeframe direction
+classification for XAUUSD.
+
+### 模式：manual-only（截至 2026-07-07）
+
+- ❌ **NOT** hooked into `run_daily.{sh,bat}`
+- ❌ **NOT** bound to any cron / scheduled task
+- ❌ **NOT** wired to the daily brief / journal assembler
+- ✅ 只用嚟 manual invocation，對 HKT 21:00 NY session ad-hoc check 或
+  backtest case-by-case 用。
+
+### 資料來源 / 計算窗口
+
+- D1 fetch — yfinance `GC=F` (futures front-month)。**預設 period 5y**
+  (`DIRECTION_ENGINE_PERIOD=5y`) 確保 MA200 有完整 200 trading-day warm-up。
+- 內建 in-memory TTL cache 5 分鐘，避免 short-loop 短期內重覆打 Yahoo。
+- Retry：exponential backoff 1s → 2s → 4s → 8s（cap）。
+- 若 5y fetch 最終失敗：fallback 至 6mo (FALLBACK_PERIOD)；若兩者都失敗，
+  RuntimeError raised 含 both error messages，**永不 silent**。
+
+### Long-term context flags (snapshot dict)
+
+- `period_used`         `"5y"` | `"6mo"`
+- `primary_ok`          boolean — 是否用緊 primary 5y
+- `provenance`          `"primary"` | `"fallback"`
+- `bars`                D1 bars count
+- `d1_close`, `d1_ma20`, `d1_ma50`, `d1_ma200`
+- `sufficient_for_ma50`、`sufficient_for_ma200`
+- `insufficient_context` — `True` 時代表 MA200 唔可信 (bars < 210)
+
+### 使用範例
+
+```python
+from src.daily_xauusd_brief.direction_engine import build_engine_snapshot
+snap = build_engine_snapshot()                       # 預設 GC=F, 5y
+print(snap["d1_ma200"], snap["insufficient_context"])  # None / False (正常)
+```
+
+如要換 symbol / period:
+```python
+snap = build_engine_snapshot("XAUUSD=X", "5y")
+```
+
+### 覆寫 env defaults
+
+- `DIRECTION_ENGINE_SYMBOL`        (default `"GC=F"`)
+- `DIRECTION_ENGINE_PERIOD`        (default `"5y"`)
+- `DIRECTION_ENGINE_FALLBACK_PERIOD` (default `"6mo"`)
+
+### 現階段 NOT production trading
+
+- 純 analytical / read-only。
+- 唔 emit Telegram。
+- 唔 write `reports/`。
+- 唔 alert / 唔 webhook。
+- 任何 auto-scheduling 嘅提案，必須先喺 AGENTS.md 提議擴張章節先 enable。
