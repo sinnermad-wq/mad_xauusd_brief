@@ -218,3 +218,69 @@ snap = build_engine_snapshot("XAUUSD=X", "5y")
 - 唔 write `reports/`。
 - 唔 alert / 唔 webhook。
 - 任何 auto-scheduling 嘅提案，必須先喺 AGENTS.md 提議擴張章節先 enable。
+
+---
+
+## 🛰️ Candlestick Direction Engine Review Log (v1)
+
+`data/engine_reviews.csv` — structural log of every engine analysis session.
+Write path: `scripts/log_engine_review.py`.  Read path: dashboard
+`🛰️ Engine Reviews` section (read-only).
+
+### CSV 欄位
+
+| 欄位 | 說明 |
+|---|---|
+| `review_id` | auto-generated, 格式 `GC-F_YYYY-MM-DD_HHMMSS_<6hex>` |
+| `confidence_bucket` | auto: 0-39 / 40-54 / 55-69 / 70-84 / 85-100 |
+| `support_levels` / `resistance_levels` | 分號分隔 |
+| `insufficient_context` | true/false — MA200 可用性 |
+| `ma200_available` | true/false |
+| `outcome_label` | 可留空；日後手動或 script 更新 |
+| 完整 36 欄 | 見 `scripts/log_engine_review.py` header docstring |
+
+### 寫入方式
+
+```bash
+# dry-run（不寫入）
+python scripts/log_engine_review.py --input /path/to/snapshot.json --dry-run
+
+# 實際寫入
+python scripts/log_engine_review.py --input /path/to/snapshot.json
+
+# 或 stdin
+cat /path/to/snapshot.json | python scripts/log_engine_review.py --input -
+```
+
+### Dashboard `🛰️ Engine Reviews` 頁面 (read-only)
+
+- **KPI cards**：Total reviews / Avg confidence / Correct % / Invalidation Hit %
+- **Latest 20 Reviews table**：date, hkt_time, session, direction, bias, confidence, bucket, invalidation level, outcome
+- **Breakdowns**：by session / by direction_classification / by confidence_bucket
+- **Data quality**：insufficient_context count / MA200 available ratio
+
+### 手動更新 outcome_label（not auto-filled）
+
+日後想更新某筆 `review_id` 的結果，例如 `GC-F_2026-07-07_103257_14afec`：
+
+```python
+import csv, datetime
+path = "data/engine_reviews.csv"
+rows = list(csv.DictReader(open(path)))
+for r in rows:
+    if r["review_id"] == "GC-F_2026-07-07_103257_14afec":
+        r["outcome_label"]      = "correct"
+        r["review_score"]       = "85"
+        r["failure_reason"]     = "none"
+        r["lesson"]             = "..."
+        r["updated_at"]         = datetime.datetime.now().isoformat()
+writer = csv.DictWriter(open(path,"w",newline=""), fieldnames=rows[0].keys())
+writer.writeheader(); writer.writerows(rows)
+```
+
+### 手動-only 規則（仍然生效）
+
+- ❌ 唔自動接 `run_daily.sh`
+- ❌ 唔新增 cron
+- ❌ 唔自動寫入 journal assembler
+- ✅ `log_engine_review.py` 需要人喺 chat 主動 trigger
