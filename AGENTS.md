@@ -316,3 +316,31 @@ python scripts/update_engine_review.py --review-id ... --outcome-label wrong --f
 - `--force` → 可強制覆蓋
 - 所有更新寫入 temp file 再 replace（atomic）
 - `updated_at` 自動更新為 ISO timestamp
+
+### generate_engine_weekly_report.py — 每週 calibration review
+
+```bash
+# 打印到 stdout（dry-run）
+python scripts/generate_engine_weekly_report.py --week-start 2026-06-30 --dry-run
+
+# 寫入 reports/engine_reviews/weekly-2026-06-30.md
+python scripts/generate_engine_weekly_report.py --week-start 2026-06-30
+
+# 自訂 output path
+python scripts/generate_engine_weekly_report.py \
+    --week-start 2026-06-30 \
+    --week-end 2026-07-06 \
+    --symbol GC=F \
+    --output reports/engine_reviews/weekly-2026-06-30-custom.md
+```
+
+報告 sections：
+Period / Summary / Session Breakdown / Direction Breakdown /
+Confidence Calibration / Failure Reasons / Top Observations / Next Adjustments
+
+規則：
+- `reports/engine_reviews/` 預設寫入，`reports/` 在 `.gitignore` 內（本地输出）
+- 週內冇資料 → "No Data" section，仍生成檔案
+- `--week-end` 預設 = `--week-start + 6 days`
+- `--week-end` 不可早於 `--week-start`（error）
+- 手動-only，唔自動排程
