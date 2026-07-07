@@ -344,3 +344,28 @@ Confidence Calibration / Failure Reasons / Top Observations / Next Adjustments
 - `--week-end` 預設 = `--week-start + 6 days`
 - `--week-end` 不可早於 `--week-start`（error）
 - 手動-only，唔自動排程
+
+### generate_engine_monthly_report.py — 每月的 calibration review
+
+```bash
+# 打印到 stdout（dry-run）
+python scripts/generate_engine_monthly_report.py --month 2026-07 --dry-run
+
+# 寫入 reports/engine_reviews/monthly-2026-07.md
+python scripts/generate_engine_monthly_report.py --month 2026-07
+
+# 自訂 output / symbol filter
+python scripts/generate_engine_monthly_report.py --month 2026-07 --symbol GC=F \
+    --output reports/engine_reviews/monthly-2026-07.md
+```
+
+報告 sections：
+Period / Summary（median_conf, insufficient_context_rate, ma200_rate）/ Session Breakdown /
+Direction Breakdown / Confidence Calibration / Failure Reasons / Drift Pattern Notes /
+Rule Change Candidates / Next Month Actions
+
+規則：
+- `month` 格式 YYYY-MM；不合格式自動 error exit 2
+- `total_reviews < 10` → ⚠️ Sample size warning
+- 冇資料 → 仍生成 "No Data" section
+- Manual-only，唔自動排程，唔改 dashboard 寫入邏輯

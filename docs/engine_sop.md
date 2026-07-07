@@ -17,10 +17,12 @@
 3. Write 1–3 adjustments for next week in the report's "Next Adjustments" section.
 
 ## Monthly
-1. Review the 4 weekly reports.
-2. Check drift in confidence and outcome quality.
-3. Decide whether any rule needs to change.
-4. Keep manual-only unless calibration is stable.
+1. Generate monthly report:
+   `python scripts/generate_engine_monthly_report.py --month YYYY-MM --dry-run`
+2. Review 4 weekly reports + monthly Drift/Pattern Notes + Rule Change Candidates.
+3. Check drift in confidence and outcome quality.
+4. Write next-month actions in the report's "Next Month Actions" section.
+5. Keep manual-only unless calibration is stable.
 
 ---
 
