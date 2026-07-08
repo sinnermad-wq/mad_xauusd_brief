@@ -291,6 +291,22 @@ writer.writeheader(); writer.writerows(rows)
 提出 → 審批 → 1週驗證 → 4週驗證 → 月報記錄。
 Rule changes 記錄喺 `docs/rule_changes.md`（append-only）。
 
+### XAUUSD Briefing Refresh Schedule (cron-triggered, context-only)
+
+`scripts/generate_xauusd_refresh.py` — 三個固定時間生成 refresh briefing：
+
+| Job | HKT | Cron |
+|---|---|---|
+| `xauusd_morning_briefing` | 08:15 | `15 8 * * *` |
+| `xauusd_pre_london_refresh` | 14:45 | `45 14 * * *` |
+| `xauusd_pre_ny_refresh` | 20:15 | `15 20 * * *` |
+
+每個 output 包含 16 個 unified schema 欄位（JSON + Markdown dual output），
+`data/xauusd_refresh/{mode}/` 下。Telegram dispatch 喺 JSON 寫盤之後先做，
+所以 dispatch 失敗唔會影響 output。
+
+用途：context layer，唔係 execution module。
+
 ### Backtest & Scalping Research Module (manual-only)
 
 `src/backtest/` + `scripts/run_backtest.py` — research-only backtest CLI，唔做任何 execution。
