@@ -291,6 +291,43 @@ writer.writeheader(); writer.writerows(rows)
 提出 → 審批 → 1週驗證 → 4週驗證 → 月報記錄。
 Rule changes 記錄喺 `docs/rule_changes.md`（append-only）。
 
+### Fusion Engine v1 (manual-only, confluence)
+
+`src/fusion/` + `scripts/run_fusion_engine.py` — rules-based, read-only
+confluence engine combining briefing/refresh + candlestick engine into
+a single decision object for dashboard / report / human review.
+
+```bash
+# Auto: latest briefing + candle
+python scripts/run_fusion_engine.py --output text
+
+# Specific files
+python scripts/run_fusion_engine.py --briefing data/xauusd_refresh/...json \
+    --candle data/candle_engine/m5/...json --output both
+
+# Candle only (reduced quality)
+python scripts/run_fusion_engine.py --candle-only --output text
+
+# Dry-run
+python scripts/run_fusion_engine.py --dry-run
+```
+
+4 scoring layers: `context_score` (briefing vs candle alignment) /
+`price_action_score` (candlestick quality) / `environment_score`
+(regime, volatility, event) / `quality_score` (staleness, conflicts).
+
+Decision priority (highest first): `no_trade` → `wait` → `long_watch` / `short_watch`.
+
+Hard blocks: market closed / quality<25 / stance=no_trade / both stale / no inputs / extreme risk.
+
+Decision states: `long_watch / short_watch / wait / no_trade`
+
+Output: `decision / decision_strength / confluence_score / directional_bias /
+bias_strength / market_regime / risk_state / entry_readiness / reasons /
+conflicts / warnings / inputs_used / missing_inputs` (20 fields + passthrough).
+
+Manual-only: no broker / execution / auto-trade / Telegram auto-signal.
+
 ### Candlestick Direction Engine v1 (manual-only)
 
 `src/candlestick/` + `scripts/run_candle_engine.py` — rules-based, manual-only
