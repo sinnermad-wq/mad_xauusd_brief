@@ -717,3 +717,72 @@ def render_streamlit_chart(
         st.caption(freshness_str)
     st.caption(f"🕐 Latest bar: **{bar_time}** | Chart: TradingView Lightweight Charts")
     st.caption(source_note)
+
+def build_fusion_decision_markers(fusion_dir=None) -> list[dict]:
+    """Build Fusion decision markers from data/fusion/.
+
+    Overlay rules:
+      - long_watch  -> green  arrowUp   belowBar "F:LONG"  (below candle)
+      - short_watch -> red    arrowDown aboveBar  "F:SHORT" (above candle)
+      - wait        -> yellow circle   inBar     "F:WAIT"  (low-profile)
+      - no_trade    -> no chart overlay (panel banner handles this)
+
+    Reads only the newest fusion JSON from data/fusion/.
+    Returns empty list on missing/stale/no_trade — caller handles gracefully.
+    """
+    from pathlib import Path as _P
+    import json as _json
+    from datetime import datetime as _dt
+
+    if fusion_dir is None:
+        fusion_dir = _P.home() / "projects" / "daily-xauusd-bot" / "data" / "fusion"
+
+    if not fusion_dir.exists():
+        return []
+    files = sorted(fusion_dir.glob("*_fusion.json"))
+    if not files:
+        return []
+    try:
+        d = _json.loads(files[-1].read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    decision = (d.get("decision") or "").lower()
+    if decision not in ("long_watch", "short_watch", "wait"):
+        return []
+
+    ts = d.get("timestamp") or d.get("generated_at") or ""
+    if not ts:
+        return []
+    try:
+        dt_obj = _dt.fromisoformat(ts.replace("Z", "+00:00"))
+        time_sec = int(dt_obj.timestamp())
+    except Exception:
+        return []
+
+    decision_strength = d.get("decision_strength", "")
+    conf = d.get("confluence_score", 0)
+
+    # Staleness check: ignore fusion output older than 60 minutes
+    from datetime import datetime as _now
+    staleness_min = 60
+    if decision in ("long_watch", "short_watch", "wait"):
+        try:
+            age_min = (_now.now(dt_obj.tzinfo) - dt_obj).total_seconds() / 60.0
+            if age_min > staleness_min:
+                return []
+        except Exception:
+            pass
+
+    if decision == "long_watch":
+        shape, position, color = "arrowUp", "belowBar", "#3fb950"
+        text = f"F:LONG{'+' if decision_strength == 'strong' else '~'}({conf:.0f})"
+    elif decision == "short_watch":
+        shape, position, color = "arrowDown", "aboveBar", "#f85149"
+        text = f"F:SHORT{'+' if decision_strength == 'strong' else '~'}({conf:.0f})"
+    else:
+        shape, position, color = "circle", "inBar", "#e3b23c"
+        text = f"F:WAIT({conf:.0f})"
+
+    return [{"time": time_sec, "position": position, "color": color,
+             "shape": shape, "text": text}]

@@ -463,6 +463,7 @@ if adapter is not None:
             build_chart_bar_json_from_adapter,
             build_signal_markers,
             build_active_price_lines,
+            build_fusion_decision_markers,
         )
 
         # E11: build overlays from history-driven builders (graceful fallback if no data)
@@ -470,11 +471,16 @@ if adapter is not None:
             markers = build_signal_markers()
         except Exception:
             markers = []
+        # Fusion decision markers — overlay on top of history markers
+        try:
+            fusion_markers = build_fusion_decision_markers()
+        except Exception:
+            fusion_markers = []
+        markers = markers + fusion_markers
         try:
             price_lines = build_active_price_lines()
         except Exception:
             price_lines = []
-
         # Check if we have bars (from cache or just-fetched)
         bars, bar_time = build_chart_bar_json_from_adapter(adapter, current_tf, limit=60)
 
@@ -670,9 +676,141 @@ else:
     st.info("No candlestick data. Run `--mode candlestick --dry-run` first.")
 
 
-# ── Engine Reviews ─────────────────────────────────────────────────────────
+# ── Fusion Engine v1 Cockpit (read-only) ─────────────────────────────────────
+# Read-only; no execution / auto-trade / broker
+# Chart markers: long_watch=green below / short_watch=red above / wait=yellow inBar / no_trade=banner
+
 st.divider()
-st.subheader("🛰️ Engine Reviews")
+st.subheader("🎯 Fusion Decision Cockpit")
+
+FUSION_DIR_V1 = BASE_DIR / "data" / "fusion"
+
+def load_latest_fusion_v1():
+    if not FUSION_DIR_V1.exists():
+        return None
+    import json as _json
+    files = sorted(FUSION_DIR_V1.glob("*_fusion.json"))
+    if not files:
+        return None
+    try:
+        return _json.loads(files[-1].read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+fusion_v1 = load_latest_fusion_v1()
+
+if not fusion_v1:
+    st.info("No fusion v1 data. Run: python scripts/run_fusion_engine.py --output text")
+else:
+    decision   = fusion_v1.get("decision", "unknown")
+    strength   = fusion_v1.get("decision_strength", "unknown")
+    conf       = float(fusion_v1.get("confluence_score", 0))
+    bias       = fusion_v1.get("directional_bias", "unknown")
+    b_str      = fusion_v1.get("bias_strength", "unknown")
+    regime     = fusion_v1.get("market_regime", "unknown")
+    risk_state = fusion_v1.get("risk_state", "unknown")
+    readiness  = fusion_v1.get("entry_readiness", "unknown")
+    warnings   = fusion_v1.get("warnings") or []
+    conflicts  = fusion_v1.get("conflicts") or []
+    reasons    = fusion_v1.get("reasons") or []
+    inputs_u   = fusion_v1.get("inputs_used") or []
+    missing    = fusion_v1.get("missing_inputs") or []
+    ctx_score  = float(fusion_v1.get("context_score", 0))
+    pa_score   = float(fusion_v1.get("price_action_score", 0))
+    env_score  = float(fusion_v1.get("environment_score", 0))
+    qual_score = float(fusion_v1.get("quality_score", 0))
+    f_ts       = (fusion_v1.get("generated_at") or "")[:19].replace("T", " ")
+
+    dec_colors = {
+        "long_watch":  ("#1a7f37", "#3fb950"),
+        "short_watch": ("#8b1a1a", "#f85149"),
+        "wait":        ("#5e4200", "#e3b23c"),
+        "no_trade":    ("#2d1b00", "#9b8eff"),
+    }
+    _, ac_col = dec_colors.get(decision, ("#1c2128", "#8b949e"))
+
+    dec_emoji = {
+        "long_watch":  "🟢 LONG WATCH",
+        "short_watch": "🔴 SHORT WATCH",
+        "wait":        "⚪ WAIT",
+        "no_trade":    "🚫 NO TRADE",
+    }.get(decision, "❔ UNKNOWN")
+
+    ac = ac_col
+    # Single concatenation — no implicit string concat across lines
+    html = (
+        '<div style="border-left:4px solid ' + ac + ';padding:16px 20px;'
+        + 'background:#0d1117;border-radius:8px;margin-bottom:10px;">'
+        + '<div style="font-size:24px;font-weight:700;color:' + ac + ';margin-bottom:4px;">'
+        + dec_emoji
+        + '</div>'
+        + '<div style="color:#8b949e;font-size:13px;">'
+        + '<b>Strength:</b> ' + strength + ' &nbsp;|&nbsp;'
+        + '<b>Confluence:</b> ' + ('%.1f' % conf) + '% &nbsp;|&nbsp;'
+        + '<b>Bias:</b> ' + bias + ' (' + b_str + ')'
+        + '</div>'
+        + '<div style="color:#8b949e;font-size:13px;margin-top:2px;">'
+        + '<b>Regime:</b> ' + regime + ' &nbsp;|&nbsp;'
+        + '<b>Risk:</b> ' + risk_state + ' &nbsp;|&nbsp;'
+        + '<b>Entry:</b> ' + readiness + ' &nbsp;|&nbsp;'
+        + '<b>Generated:</b> ' + f_ts
+        + '</div>'
+        + '</div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
+
+    if decision == "no_trade":
+        st.warning("🚫 NO TRADE — Market closed / high risk / degraded inputs. See panel below.")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Context Score",  "%.1f" % ctx_score, help="Briefing vs candle bias alignment; event risk penalty")
+    c2.metric("Price Action",   "%.1f" % pa_score,  help="Candlestick conviction, structure, rejection, momentum")
+    c3.metric("Environment",    "%.1f" % env_score,  help="Regime fit, volatility, sequence, compression")
+    c4.metric("Quality Score",  "%.1f" % qual_score,  help="Staleness, missing inputs, conflicts, event risk")
+
+    tab_r, tab_c, tab_w, tab_f = st.tabs([
+        "📋 Reasons",
+        "⚠️ Conflicts (" + str(len(conflicts)) + ")",
+        "🔔 Warnings (" + str(len(warnings)) + ")",
+        "📥 Inputs",
+    ])
+
+    with tab_r:
+        if reasons:
+            for r in reasons[:8]:
+                st.markdown("- `" + r + "`")
+        else:
+            st.caption("No reasons recorded.")
+
+    with tab_c:
+        if conflicts:
+            for c in conflicts:
+                st.markdown("⚠️ `" + c + "`")
+        else:
+            st.caption("No conflicts detected.")
+
+    with tab_w:
+        if warnings:
+            for w in warnings:
+                st.markdown("- `" + w + "`")
+        else:
+            st.caption("No warnings.")
+
+    with tab_f:
+        used_str = ", ".join(inputs_u) if inputs_u else "none"
+        miss_str = ", ".join(missing) if missing else "none"
+        st.markdown("**Inputs used:** " + used_str)
+        st.markdown("**Missing:** " + miss_str)
+        c_close = fusion_v1.get("_candle_close")
+        if c_close is not None:
+            c_dir = fusion_v1.get("_candle_direction_bias", 0)
+            c_state = fusion_v1.get("_candle_primary_state", "unknown")
+            st.markdown(
+                            "**Candle:** close=$" + str(c_close) + " | "
+                            "bias=%.2f" % float(c_dir) + " | state=" + str(c_state)
+                        )
+
+            st.subheader("🛰️ Engine Reviews")
 
 REVIEWS_CSV = BASE_DIR / "data" / "engine_reviews.csv"
 
