@@ -291,6 +291,35 @@ writer.writeheader(); writer.writerows(rows)
 提出 → 審批 → 1週驗證 → 4週驗證 → 月報記錄。
 Rule changes 記錄喺 `docs/rule_changes.md`（append-only）。
 
+### Backtest & Scalping Research Module (manual-only)
+
+`src/backtest/` + `scripts/run_backtest.py` — research-only backtest CLI，唔做任何 execution。
+
+General strategies: `baseline_ma`, `breakout`
+Scalp strategies: `xauusd_scalp_reversion`, `xauusd_scalp_momentum`
+
+```bash
+# general
+python scripts/run_backtest.py --mode general --strategy baseline_ma \\
+    --start 2026-01-01 --end 2026-03-31 --format both
+
+# scalp with cost sensitivity
+python scripts/run_backtest.py --mode scalp --strategy xauusd_scalp_momentum \\
+    --start 2026-01-01 --end 2026-03-31 \\
+    --spread-points 5 --slippage-points 2 \\
+    --session new_york \\
+    --output-format both
+
+# 參數預設
+python scripts/run_backtest.py --strategy baseline_ma --show-params
+```
+
+Outputs:
+- `data/backtests/YYYYMMDD_{strategy}_{mode}.csv` — trade-level with MAE/MFE/pnl_r
+- `reports/backtests/YYYYMMDD_{strategy}_{mode}.md` — full markdown report
+
+Rule Change Protocol 適用於任何 strategy parameter 的改動。
+
 ### update_engine_review.py — 驗證窗口期滿後更新結果
 
 ```bash
