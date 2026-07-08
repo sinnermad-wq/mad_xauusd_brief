@@ -291,6 +291,40 @@ writer.writeheader(); writer.writerows(rows)
 提出 → 審批 → 1週驗證 → 4週驗證 → 月報記錄。
 Rule changes 記錄喺 `docs/rule_changes.md`（append-only）。
 
+### Candlestick Direction Engine v1 (manual-only)
+
+`src/candlestick/` + `scripts/run_candle_engine.py` — rules-based, manual-only
+scalping-friendly XAUUSD K線方向分析，支援 M1 / M5。
+
+```bash
+# M1 live
+python scripts/run_candle_engine.py --symbol GC=F --timeframe M1 --output text
+
+# M5 with all outputs
+python scripts/run_candle_engine.py --symbol GC=F --timeframe M5 --output both
+
+# From CSV
+python scripts/run_candle_engine.py --input data/my_m5.csv --output json
+```
+
+Output schema (23 fields): `timestamp / symbol / timeframe / close /
+direction_bias (-1~+1) / primary_state / momentum_state / rejection_state /
+range_state / structure_state / sequence_state / pattern_tags /
+momentum_score / rejection_score / compression_score / structure_score /
+confidence_score / context_tags / warnings / generated_at / schema_version`
+
+States: `direction_state`, `momentum_state`, `rejection_state`, `range_state`,
+`structure_state` (HH/HL/LH/LL/neutral), `sequence_state` (building/exhausting).
+
+Patterns: `doji / inside_bar / bullish_engulfing / bearish_engulfing /
+hammer_like / shooting_star_like / momentum_bar_up / momentum_bar_down`.
+
+Structure: `higher_high / higher_low / lower_high / lower_low / neutral`;
+`breakout_up/down`, `failed_breakout_up/down`, `sweep_high/low`,
+`reclaim_above/below`.
+
+Manual-only: no broker / execution / auto-trade / Telegram auto-signal.
+
 ### XAUUSD Briefing Refresh Schedule (cron-triggered, context-only)
 
 `scripts/generate_xauusd_refresh.py` — 三個固定時間生成 refresh briefing：
