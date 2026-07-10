@@ -112,9 +112,11 @@ def snapshot_to_history_entry(
             dominant_regime = max(breakdown, key=lambda k: breakdown[k]["n"])
 
     # Approval counts
-    pending = snap.approval_state.pending_count
-    approved = snap.approval_state.approved_count
-    rejected = snap.approval_state.rejected_count
+    from .approval import APPROVAL_PENDING, APPROVAL_APPROVED, APPROVAL_REJECTED
+    pending_list = snap.pending_approvals or ()
+    pending = sum(1 for a in pending_list if a.status == APPROVAL_PENDING)
+    approved = sum(1 for a in pending_list if a.status == APPROVAL_APPROVED)
+    rejected = sum(1 for a in pending_list if a.status == APPROVAL_REJECTED)
 
     return HealthHistoryEntry(
         timestamp_iso=now_iso,
@@ -914,7 +916,7 @@ def generate_trend_report_csv(trends: dict) -> str:
             sugg.trend.value if sugg else "",
             appr.current_pending if appr else "",
             appr.current_approved if appr else "",
-            appr.rejected_approvals if appr else "",
+            appr.current_rejected if appr else "",
             t.computed_at_iso,
         ])
 
