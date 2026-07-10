@@ -28,6 +28,11 @@ Public entry points::
     from src.strategy_health import compute_suggestions
     sugs = compute_suggestions(snap.diagnostics)
 
+    # Read-only review summary (for dashboard)
+    from src.strategy_health import build_review_report_all_windows
+    reports = build_review_report_all_windows(snap)
+    md_7d = reports["7d"].to_markdown()
+
 See docs/health/strategy_health_engine_v1.md for full documentation.
 """
 from __future__ import annotations
@@ -82,6 +87,13 @@ from .models import (
 from .snapshot_builder import build_health_snapshot
 from .snapshot_loader import load_latest_snapshot, load_snapshot_from_paths
 from .suggestion import build_pending_approvals, compute_suggestions
+from .review_report import (
+    ReviewFinding,
+    ReviewReport,
+    ReviewSection,
+    build_review_report,
+    build_review_report_all_windows,
+)
 
 __all__ = [
     # Snapshot (core)
@@ -139,4 +151,10 @@ __all__ = [
     "SUG_REVIEW_PARAMETERS",
     "SUG_PAUSE_STRATEGY",
     "SUG_REVALIDATE_BACKTEST",
+    # Review report (read-only summary)
+    "ReviewFinding",
+    "ReviewSection",
+    "ReviewReport",
+    "build_review_report",
+    "build_review_report_all_windows",
 ]

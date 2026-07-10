@@ -1058,6 +1058,8 @@ if (_sh_dir / "__init__.py").exists():
             load_latest_snapshot,
             compute_all_trend_windows,
             generate_trend_report_markdown,
+            build_review_report,
+            build_review_report_all_windows,
             HEALTH_GREEN, HEALTH_YELLOW, HEALTH_RED, HEALTH_UNKNOWN,
             SEVERITY_OK, SEVERITY_WARN, SEVERITY_CRITICAL, SEVERITY_UNKNOWN,
             APPROVAL_PENDING,
@@ -1166,6 +1168,73 @@ if (_sh_dir / "__init__.py").exists():
                              f"`{snap.config_snapshot.get('regime_window', '?')}d` regime")
                 if snap.warnings:
                     st.write(f"**Warnings:** `{', '.join(snap.warnings)}`")
+
+            # ── Review Report (read-only) ────────────────────────────────────
+            st.markdown("#### 📋 Review Report")
+            st.caption(
+                "Read-only summary aggregating current snapshot + history trends. "
+                "Window selector shows 7d / 14d / 30d. No auto-apply, no execution."
+            )
+            rev_window = st.selectbox(
+                "Review window",
+                options=[7, 14, 30],
+                index=0,
+                format_func=lambda d: f"{d} day(s)",
+                key="review_window_days",
+            )
+
+            try:
+                review = build_review_report(snap, window_days=rev_window)
+
+                # Window comparison: build all 3 once and let users switch via selectbox
+                _all_reviews = build_review_report_all_windows(snap)
+                if (
+                    _all_reviews.get(f"{rev_window}d") is not None
+                    and _all_reviews[f"{rev_window}d"].sections
+                ):
+                    review = _all_reviews[f"{rev_window}d"]
+                else:
+                    # Fall back to the function result
+                    review = build_review_report(snap, window_days=rev_window)
+
+                # Compact header
+                _hdr_cols = st.columns([2, 2, 2])
+                _hdr_cols[0].metric("Window", f"{review.window_days}d")
+                _hdr_cols[1].metric("Health Status", review.health_status.upper())
+                _hdr_cols[2].metric(
+                    "Health Score",
+                    f"{review.health_score:.1f}" if review.health_score >= 0 else "—",
+                )
+
+                if not review.has_sufficient_history:
+                    st.warning(
+                        "⚠️ Insufficient history (< 2 entries in selected window). "
+                        "Showing current-snapshot summary only."
+                    )
+
+                # Render each section
+                for sec in review.sections:
+                    if not sec.has_content():
+                        continue
+                    with st.expander(sec.heading, expanded=(sec.heading.startswith("1."))):
+                        if sec.findings:
+                            for f in sec.findings:
+                                st.markdown(f"- {f.display()[:300]}")
+                        if sec.table:
+                            header = sec.table[0]
+                            rows = sec.table[1:]
+                            try:
+                                import pandas as _pd
+                                _df = _pd.DataFrame(rows, columns=header)
+                                st.table(_df)
+                            except Exception:
+                                # Fallback: simple markdown table
+                                st.markdown("| " + " | ".join(str(c) for c in header) + " |")
+                                st.markdown("| " + " | ".join("---" for _ in header) + " |")
+                                for r in rows:
+                                    st.markdown("| " + " | ".join(str(c) for c in r) + " |")
+            except Exception as _re:
+                st.caption(f"Review report unavailable: {_re}")
 
     except Exception as _e:
         st.warning(f"Strategy Health unavailable: {_e}")

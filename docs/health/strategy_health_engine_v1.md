@@ -61,6 +61,12 @@ snap = load_latest_snapshot()
 print(snap.health_status)          # green | yellow | red | unknown
 print(snap.suggestions)           # tuple of StrategySuggestion
 
+# Dashboard Review Report (read-only summary, v1)
+from strategy_health import build_review_report_all_windows
+reports = build_review_report_all_windows(snap)
+print(reports["7d"].to_markdown())
+# See docs/health/strategy_health_review_report_v1.md
+
 # With explicit paths (recommended for cron/CLI)
 snap = load_snapshot_from_paths(
     fusion_history_path="data/fusion_history/2026-07-10.json",
