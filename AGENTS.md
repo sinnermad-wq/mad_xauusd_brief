@@ -599,3 +599,84 @@ Manual-only; does NOT modify CSV / dashboard / cron / run_daily.sh.
 - ✅ 保留原有 stdout/exit contract（`OK|...`、`[DRY RUN]` 等依然有效）
 - ✅ Manual-only：唔接 cron / webhook / daemon
 - ✅ Dashboard + `run_daily.sh` 完全 unchanged
+
+---
+
+## 🏥 Strategy Health Monitor (manual-only)
+
+`src/strategy_health/` — read-only rolling diagnostics + suggestion engine.
+
+### Design principles
+
+- ❌ No auto-trade. No broker execution. No auto-parameter adjustment.
+- ✅ Pure analytical output. Frozen snapshot dataclasses. JSON-serializable.
+- ✅ Human approval required for every suggestion before any action.
+
+### Entry points
+
+```python
+from src.strategy_health import load_latest_snapshot, load_snapshot_from_paths
+
+snap = load_latest_snapshot()                       # auto-discovery
+snap = load_snapshot_from_paths(                    # explicit paths
+    fusion_history_path="data/fusion_history/2026-07-10.json",
+    backtest_report_path="data/backtest/2026-07-10_backtest.json",
+)
+print(snap.health_status)   # green | yellow | red | unknown
+print(snap.suggestions)      # tuple of StrategySuggestion
+```
+
+### Data sources (read-only)
+
+| Source | Path pattern | Used by |
+|---|---|---|
+| Backtest report | `data/backtest/*.json` | performance, cost, drawdown |
+| Fusion history | `data/fusion_history/*.json` | regime, signal |
+| Candlestick snapshot | `data/candlestick/latest_snapshot.json` | freshness |
+
+### Suggestions (8 kinds, priority order)
+
+`pause_strategy` → `revalidate_backtest` → `disable_session` →
+`tighten_filter` → `reduce_size` → `review_parameters` →
+`watch_only` → `keep_running`
+
+### Approval workflow
+
+1. Snapshot contains `pending_approvals` — all suggestions start `pending`
+2. User edits `data/strategy_health/approvals.json` manually
+3. Status values: `pending` | `approved` | `rejected` | `superseded`
+4. Engine on next run drops already-resolved suggestions
+
+Approval file format:
+```json
+{
+  "sug-20260710-xxx": {
+    "suggestion_id": "sug-20260710-xxx",
+    "kind": "review_parameters",
+    "status": "approved",
+    "note": "Shift confirmed structural.",
+    "resolved_by": "mad",
+    "created_at": "2026-07-10T09:00:00Z",
+    "updated_at": "2026-07-10T09:05:00Z"
+  }
+}
+```
+
+### Diagnostics (6 categories)
+
+`performance` · `regime` · `cost` · `signal` · `drawdown` · `freshness`
+
+Each returns `StrategyDiagnostic(name/severity/summary/metrics/reasons/source)`.
+
+### Docs
+
+- `docs/health/strategy_health_engine_v1.md` — full spec
+- `docs/health/strategy_health_guardrails.md` — hard prohibitions
+
+### Hard rules
+
+- NO broker / exchange API integration of any kind
+- NO auto-approval of suggestions
+- NO auto-parameter writes (fusion rules, config files, etc.)
+- NO recursive cron from strategy-health jobs
+- Dashboard block is read-only — only write is user manual edit of `approvals.json`

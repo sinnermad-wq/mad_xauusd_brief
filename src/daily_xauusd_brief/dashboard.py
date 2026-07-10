@@ -1048,10 +1048,120 @@ else:
                 st.caption(f"- {et}: {ec}x  (latest: {lt_time} @ {lt_script})")
 
 
+# ── Strategy Health ──────────────────────────────────────────────────────────
+import sys as _sys
+_sh_dir = BASE_DIR / "src" / "strategy_health"
+if (_sh_dir / "__init__.py").exists():
+    try:
+        _sys.path.insert(0, str(BASE_DIR / "src"))
+        from strategy_health import (
+            load_latest_snapshot,
+            HEALTH_GREEN, HEALTH_YELLOW, HEALTH_RED, HEALTH_UNKNOWN,
+            SEVERITY_OK, SEVERITY_WARN, SEVERITY_CRITICAL, SEVERITY_UNKNOWN,
+            APPROVAL_PENDING, APPROVAL_APPROVED,
+        )
+
+        st.divider()
+        st.subheader("🏥 Strategy Health")
+
+        # Load latest snapshot (auto-discovers data files)
+        try:
+            snap = load_latest_snapshot()
+        except Exception:
+            snap = None
+
+        if snap is None:
+            st.info("Strategy health: no data available (run backtest + fusion first).")
+
+        else:
+            # Health status banner
+            if snap.health_status == HEALTH_GREEN:
+                st.success("✅ Health: GREEN — All diagnostics within normal range")
+            elif snap.health_status == HEALTH_YELLOW:
+                st.warning("⚠️ Health: YELLOW — At least one diagnostic at warning level")
+            elif snap.health_status == HEALTH_RED:
+                st.error("🔴 Health: RED — Critical issues detected or data sources missing")
+            else:
+                st.info("❓ Health: UNKNOWN — Insufficient data to determine status")
+
+            # ── Diagnostic summary cards ──────────────────────────────────
+            sev_col1, sev_col2, sev_col3 = st.columns(3)
+            diag_names = [d.name for d in snap.diagnostics]
+            sev_map = {d.name: d.severity for d in snap.diagnostics}
+
+            with sev_col1:
+                st.markdown("**Diagnostics**")
+                for d in snap.diagnostics[:2]:
+                    icon = "🟢" if d.severity == SEVERITY_OK else \
+                           "🟡" if d.severity == SEVERITY_WARN else \
+                           "🔴" if d.severity == SEVERITY_CRITICAL else "⚪"
+                    st.caption(f"{icon} {d.name}: {d.severity}")
+
+            with sev_col2:
+                st.markdown("** &nbsp;**")  # spacer
+                for d in snap.diagnostics[2:4]:
+                    icon = "🟢" if d.severity == SEVERITY_OK else \
+                           "🟡" if d.severity == SEVERITY_WARN else \
+                           "🔴" if d.severity == SEVERITY_CRITICAL else "⚪"
+                    st.caption(f"{icon} {d.name}: {d.severity}")
+
+            with sev_col3:
+                st.markdown("** &nbsp;**")
+                for d in snap.diagnostics[4:]:
+                    icon = "🟢" if d.severity == SEVERITY_OK else \
+                           "🟡" if d.severity == SEVERITY_WARN else \
+                           "🔴" if d.severity == SEVERITY_CRITICAL else "⚪"
+                    st.caption(f"{icon} {d.name}: {d.severity}")
+
+            # ── Suggestions ───────────────────────────────────────────────
+            if snap.suggestions:
+                st.markdown(f"**💡 Suggestions ({len(snap.suggestions)})**")
+                for sug in snap.suggestions:
+                    priority_icon = {
+                        1: "🛑", 2: "🔴", 3: "🟠", 4: "🟡",
+                        5: "🟡", 6: "⚠️", 7: "👀", 8: "✅"
+                    }.get(sug.priority, "•")
+                    st.markdown(
+                        f"{priority_icon} **[{sug.kind}]** *{sug.title}*  "
+                        f"| Priority {sug.priority}"
+                    )
+                    with st.expander("Rationale + Actions", expanded=False):
+                        st.markdown(f"_{sug.rationale}_")
+                        if sug.actions:
+                            for a in sug.actions:
+                                st.caption(f"• {a}")
+
+            # ── Pending approvals ─────────────────────────────────────────
+            pending = [pa for pa in snap.pending_approvals if pa.status == APPROVAL_PENDING]
+            if pending:
+                st.warning(
+                    f"📋 **{len(pending)} pending approval(s)** — "
+                    "edit `data/strategy_health/approvals.json` manually to resolve."
+                )
+            else:
+                st.success("All suggestions have been reviewed.")
+
+            # ── Snapshot metadata ──────────────────────────────────────────
+            with st.expander("🔧 Snapshot details"):
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.write(f"**ID:** `{snap.snapshot_id}`")
+                    st.write(f"**Generated:** {snap.generated_at}")
+                with col_b:
+                    st.write(f"**Config:** `{snap.config_snapshot.get('performance_window', '?')}t` perf / "
+                             f"`{snap.config_snapshot.get('regime_window', '?')}d` regime")
+                if snap.warnings:
+                    st.write(f"**Warnings:** `{', '.join(snap.warnings)}`")
+
+    except Exception as _e:
+        st.warning(f"Strategy Health unavailable: {_e}")
+else:
+    pass  # strategy_health module not yet installed
+
 # ── Footer ─────────────────────────────────────────────────────────────────
 
 st.caption(
-    "XAUUSD Mission Control v9 (E9 Ops Health) | "
+    "XAUUSD Mission Control v9 (E9 + Strategy Health) | "
     f"Data: `{JSON_DIR}` | "
     "Run `python -m daily_xauusd_brief.main --dry-run` to generate today's report"
 )
