@@ -1056,9 +1056,11 @@ if (_sh_dir / "__init__.py").exists():
         _sys.path.insert(0, str(BASE_DIR / "src"))
         from strategy_health import (
             load_latest_snapshot,
+            compute_all_trend_windows,
+            generate_trend_report_markdown,
             HEALTH_GREEN, HEALTH_YELLOW, HEALTH_RED, HEALTH_UNKNOWN,
             SEVERITY_OK, SEVERITY_WARN, SEVERITY_CRITICAL, SEVERITY_UNKNOWN,
-            APPROVAL_PENDING, APPROVAL_APPROVED,
+            APPROVAL_PENDING,
         )
 
         st.divider()
@@ -1083,6 +1085,18 @@ if (_sh_dir / "__init__.py").exists():
                 st.error("🔴 Health: RED — Critical issues detected or data sources missing")
             else:
                 st.info("❓ Health: UNKNOWN — Insufficient data to determine status")
+
+            # ── Trend Report ────────────────────────────────────────────────
+            try:
+                trends = compute_all_trend_windows()
+                if trends and any(t.entries_used > 0 for t in trends.values()):
+                    with st.expander("📈 Trend Report (7d / 14d / 30d)", expanded=False):
+                        report_md = generate_trend_report_markdown(trends)
+                        st.markdown(report_md)
+                else:
+                    st.caption("📈 Trend: need 2+ history entries to compute trends.")
+            except Exception as _te:
+                st.caption(f"Trend unavailable: {_te}")
 
             # ── Diagnostic summary cards ──────────────────────────────────
             sev_col1, sev_col2, sev_col3 = st.columns(3)

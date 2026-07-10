@@ -5,96 +5,132 @@ Public entry points::
     from src.strategy_health import load_latest_snapshot, load_snapshot_from_paths
 
     snap = load_latest_snapshot()
-    snap = load_snapshot_from_paths(
-        fusion_history_path="data/fusion_history/2026-07-10.json",
-        backtest_report_path="data/backtest/2026-07-10_backtest.json",
+
+    # Record current snapshot to history
+    from src.strategy_health.history import append_snapshot_to_history
+    append_snapshot_to_history(snap)
+
+    # Load history + compute trends
+    from src.strategy_health.history import (
+        load_history_entries,
+        compute_trend_window,
+        compute_all_trend_windows,
+        generate_trend_report_markdown,
+        generate_trend_report_csv,
+        snapshot_to_history_entry,
     )
-    print(snap.health_status, snap.suggestions)
+    entries = load_history_entries(limit=30)
+    t7  = compute_trend_window(days=7)
+    all_trends = compute_all_trend_windows()   # 7d + 14d + 30d
+    print(generate_trend_report_markdown(all_trends))
 
-Data structures::
+    # Suggestions
+    from src.strategy_health import compute_suggestions
+    sugs = compute_suggestions(snap.diagnostics)
 
-    from src.strategy_health.models import (
-        StrategyHealthSnapshot, StrategyDiagnostic, StrategySuggestion,
-        StrategyApprovalState, StrategyHealthConfig,
-        HEALTH_GREEN, HEALTH_YELLOW, HEALTH_RED, HEALTH_UNKNOWN,
-        SEVERITY_OK, SEVERITY_WARN, SEVERITY_CRITICAL, SEVERITY_UNKNOWN,
-        APPROVAL_PENDING, APPROVAL_APPROVED, APPROVAL_REJECTED, APPROVAL_SUPERSEDED,
-    )
-
-Approval store (manual-edit only)::
-
-    from src.strategy_health.approval import (
-        load_approvals, resolve_approval, get_pending, upsert_approval,
-    )
+See docs/health/strategy_health_engine_v1.md for full documentation.
 """
+from __future__ import annotations
+
+from .approval import load_approvals, upsert_approval, write_approvals
+from .history import (
+    append_entry_to_history,
+    append_snapshot_to_history,
+    compute_all_trend_windows,
+    compute_trend_window,
+    generate_trend_report_csv,
+    generate_trend_report_markdown,
+    load_history_entries,
+    snapshot_to_history_entry,
+)
+from .history_models import (
+    ApprovalTrend,
+    DiagnosticTrend,
+    HealthHistoryEntry,
+    HealthTrendMetrics,
+    RegimeTrend,
+    SuggestionTrend,
+    TrendDirection,
+)
 from .models import (
-    StrategyHealthConfig,
-    StrategyHealthSnapshot,
-    StrategyDiagnostic,
-    StrategySuggestion,
-    StrategyApprovalState,
     HEALTH_GREEN,
-    HEALTH_YELLOW,
     HEALTH_RED,
     HEALTH_UNKNOWN,
-    SEVERITY_OK,
-    SEVERITY_WARN,
+    HEALTH_YELLOW,
     SEVERITY_CRITICAL,
+    SEVERITY_OK,
     SEVERITY_UNKNOWN,
+    SEVERITY_WARN,
     APPROVAL_PENDING,
     APPROVAL_APPROVED,
     APPROVAL_REJECTED,
     APPROVAL_SUPERSEDED,
-    VALID_APPROVAL_STATUSES,
-    SUG_KEEP_RUNNING,
-    SUG_WATCH_ONLY,
-    SUG_REDUCE_SIZE,
-    SUG_TIGHTEN_FILTER,
     SUG_DISABLE_SESSION,
-    SUG_REVIEW_PARAMETERS,
+    SUG_KEEP_RUNNING,
     SUG_PAUSE_STRATEGY,
+    SUG_REDUCE_SIZE,
     SUG_REVALIDATE_BACKTEST,
+    SUG_REVIEW_PARAMETERS,
+    SUG_TIGHTEN_FILTER,
+    SUG_WATCH_ONLY,
+    StrategyApprovalState,
+    StrategyDiagnostic,
+    StrategyHealthConfig,
+    StrategyHealthSnapshot,
+    StrategySuggestion,
 )
-from .snapshot_loader import load_latest_snapshot, load_snapshot_from_paths
 from .snapshot_builder import build_health_snapshot
-from .suggestion import compute_suggestions, build_pending_approvals
-from .approval import (
-    load_approvals,
-    upsert_approval,
-    resolve_approval,
-    get_pending,
-    diff_approvals,
-)
+from .snapshot_loader import load_latest_snapshot, load_snapshot_from_paths
+from .suggestion import build_pending_approvals, compute_suggestions
 
 __all__ = [
-    # Entry points
+    # Snapshot (core)
     "load_latest_snapshot",
     "load_snapshot_from_paths",
     "build_health_snapshot",
-    "compute_suggestions",
-    # Data models
-    "StrategyHealthConfig",
+    # Models
     "StrategyHealthSnapshot",
     "StrategyDiagnostic",
     "StrategySuggestion",
     "StrategyApprovalState",
-    # Health statuses
+    "StrategyHealthConfig",
     "HEALTH_GREEN",
     "HEALTH_YELLOW",
     "HEALTH_RED",
     "HEALTH_UNKNOWN",
-    # Severities
-    "SEVERITY_OK",
-    "SEVERITY_WARN",
-    "SEVERITY_CRITICAL",
-    "SEVERITY_UNKNOWN",
-    # Approval statuses
+    # Approval constants
     "APPROVAL_PENDING",
     "APPROVAL_APPROVED",
     "APPROVAL_REJECTED",
     "APPROVAL_SUPERSEDED",
-    "VALID_APPROVAL_STATUSES",
-    # Suggestion kinds
+    "SEVERITY_OK",
+    "SEVERITY_WARN",
+    "SEVERITY_CRITICAL",
+    "SEVERITY_UNKNOWN",
+    # Approval
+    "load_approvals",
+    "upsert_approval",
+    "write_approvals",
+    # History
+    "append_snapshot_to_history",
+    "append_entry_to_history",
+    "snapshot_to_history_entry",
+    "load_history_entries",
+    "compute_trend_window",
+    "compute_all_trend_windows",
+    "generate_trend_report_markdown",
+    "generate_trend_report_csv",
+    # History models
+    "HealthHistoryEntry",
+    "HealthTrendMetrics",
+    "DiagnosticTrend",
+    "SuggestionTrend",
+    "ApprovalTrend",
+    "RegimeTrend",
+    "TrendDirection",
+    # Suggestions
+    "compute_suggestions",
+    "build_pending_approvals",
     "SUG_KEEP_RUNNING",
     "SUG_WATCH_ONLY",
     "SUG_REDUCE_SIZE",
@@ -103,11 +139,4 @@ __all__ = [
     "SUG_REVIEW_PARAMETERS",
     "SUG_PAUSE_STRATEGY",
     "SUG_REVALIDATE_BACKTEST",
-    # Approval store
-    "load_approvals",
-    "upsert_approval",
-    "resolve_approval",
-    "get_pending",
-    "diff_approvals",
-    "build_pending_approvals",
 ]
