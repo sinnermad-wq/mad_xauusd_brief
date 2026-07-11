@@ -93,6 +93,16 @@ from .review_actions_queue import (
     build_review_actions_queue,
     build_review_actions_queue_all_windows,
 )
+from .digest_loader import (
+    load_latest_weekly_digest,
+    load_weekly_digest_from_path,
+    weekly_digest_fallback,
+    digest_age_hours,
+    get_price_summary,
+    get_fusion_summary,
+    get_engine_review_summary,
+    get_news_summary,
+)
 from .review_report import (
     ReviewFinding,
     ReviewReport,
@@ -164,8 +174,17 @@ __all__ = [
     "build_review_report",
     "build_review_report_all_windows",
     # Review actions queue (manual-only queue)
-    "ReviewAction",
-    "ReviewActionsQueue",
-    "build_review_actions_queue",
-    "build_review_actions_queue_all_windows",
-]
+        "ReviewAction",
+        "ReviewActionsQueue",
+        "build_review_actions_queue",
+        "build_review_actions_queue_all_windows",
+        # Weekly digest (read-only)
+        "load_latest_weekly_digest",
+        "load_weekly_digest_from_path",
+        "weekly_digest_fallback",
+        "digest_age_hours",
+        "get_price_summary",
+        "get_fusion_summary",
+        "get_engine_review_summary",
+        "get_news_summary",
+    ]

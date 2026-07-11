@@ -1060,6 +1060,10 @@ if (_sh_dir / "__init__.py").exists():
             generate_trend_report_markdown,
             build_review_report,
             build_review_report_all_windows,
+            load_latest_weekly_digest,
+            digest_age_hours,
+            get_fusion_summary,
+            get_price_summary,
             HEALTH_GREEN, HEALTH_YELLOW, HEALTH_RED, HEALTH_UNKNOWN,
             SEVERITY_OK, SEVERITY_WARN, SEVERITY_CRITICAL, SEVERITY_UNKNOWN,
             APPROVAL_PENDING,
@@ -1305,6 +1309,103 @@ if (_sh_dir / "__init__.py").exists():
         st.warning(f"Strategy Health unavailable: {_e}")
 else:
     pass  # strategy_health module not yet installed
+
+
+# ── Weekly Digest (read-only, auto-loaded) ─────────────────────────────────
+try:
+    from strategy_health.digest_loader import (
+        load_latest_weekly_digest,
+        weekly_digest_fallback,
+        digest_age_hours,
+    )
+    _digest = load_latest_weekly_digest()
+except Exception:
+    _digest = weekly_digest_fallback("dashboard import failed")
+
+if _digest.get("_fallback"):
+    st.divider()
+    st.subheader("📊 Weekly Digest")
+    st.info(
+        "⚠️ No weekly digest available. "
+        "Run `scripts\generate_weekly_digest.py` to generate the first digest, "
+        "then schedule it with Windows Task Scheduler (see `docs/scheduler.md`)."
+    )
+else:
+    st.divider()
+    st.subheader("📊 Weekly Digest")
+
+    _age = digest_age_hours(_digest)
+    _age_str = f"{_age:.1f}h ago" if _age is not None else "unknown"
+
+    _price = _digest.get("summary", {}).get("price", {})
+    _fusion = _digest.get("summary", {}).get("fusion", {})
+    _reviews = _digest.get("summary", {}).get("engine_reviews", {})
+    _news = _digest.get("summary", {}).get("news", {})
+
+    _cols = st.columns([1, 1, 1, 1])
+    _cols[0].metric(
+        "Window",
+        f"{_digest.get('window_days', '?')}d",
+        help=f"Generated {_digest.get('generated_at', '?')[:16]} · {_age_str}"
+    )
+    _cols[1].metric(
+        "Dominant Bias",
+        _digest.get("dominant_bias", "N/A") or "mixed",
+        help=f"Fusion runs: {_fusion.get('total_runs', 0)}"
+    )
+    _cols[2].metric(
+        "Avg Fusion Conf",
+        f"{(_digest.get('avg_fusion_confidence') or 0) * 100:.0f}%"
+        if _digest.get("avg_fusion_confidence") is not None else "N/A",
+        help=f"Conflicts (any): {_fusion.get('conflict_any_count', 0)}"
+    )
+    _cols[3].metric(
+        "Price 7d Δ",
+        f"{_price.get('change_pct', 0):+.2f}%"
+        if _price.get("change_pct") is not None else "N/A",
+        help=f"High ${_price.get('high', '?')} · Low ${_price.get('low', '?')}"
+    )
+
+    with st.expander("📋 Digest Details", expanded=False):
+        _tab1, _tab2 = st.columns(2)
+        with _tab1:
+            st.markdown("**🧠 Fusion Engine**")
+            _fc = [
+                ("Total runs", _fusion.get("total_runs", 0)),
+                ("Bullish", _fusion.get("bullish_count", 0)),
+                ("Bearish", _fusion.get("bearish_count", 0)),
+                ("Neutral", _fusion.get("neutral_count", 0)),
+                ("Trade candidates", _fusion.get("trade_candidate_count", 0)),
+                ("Conflicts (any)", _fusion.get("conflict_any_count", 0)),
+            ]
+            for _lbl, _val in _fc:
+                st.caption(f"  · {_lbl}: **{_val}**")
+        with _tab2:
+            if _reviews.get("total_reviews", 0) > 0:
+                st.markdown("**🛰️ Engine Reviews**")
+                _rc = [
+                    ("Total reviews", _reviews.get("total_reviews", 0)),
+                    ("Avg confidence", f"{_reviews.get('avg_confidence', 'N/A')}%"),
+                    ("Outcomes filled", _reviews.get("outcomes_filled", 0)),
+                    ("  · correct", _reviews.get("outcomes_correct", 0)),
+                    ("  · incorrect", _reviews.get("outcomes_incorrect", 0)),
+                    ("Insufficient MA200", _reviews.get("insufficient_context_count", 0)),
+                ]
+                for _lbl, _val in _rc:
+                    st.caption(f"  · {_lbl}: **{_val}**")
+            else:
+                st.caption("No engine reviews in this window.")
+        _art_count = _news.get("total_articles", 0)
+        if _art_count > 0:
+            st.markdown(f"**📰 News ({_art_count} articles)**")
+            for _t in _news.get("top_tags", [])[:5]:
+                st.caption(f"  · `{_t['tag']}` ({_t['count']})")
+
+    st.caption(
+        f"Generated: {_digest.get('generated_at', '?')[:16]} · "
+        f"{_age_str} · Schema v{_digest.get('schema_version', '?')} · "
+        "read-only / manual-only"
+    )
 
 # ── Footer ─────────────────────────────────────────────────────────────────
 
