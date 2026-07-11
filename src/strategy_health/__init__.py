@@ -87,6 +87,12 @@ from .models import (
 from .snapshot_builder import build_health_snapshot
 from .snapshot_loader import load_latest_snapshot, load_snapshot_from_paths
 from .suggestion import build_pending_approvals, compute_suggestions
+from .review_actions_queue import (
+    ReviewAction,
+    ReviewActionsQueue,
+    build_review_actions_queue,
+    build_review_actions_queue_all_windows,
+)
 from .review_report import (
     ReviewFinding,
     ReviewReport,
@@ -157,4 +163,9 @@ __all__ = [
     "ReviewReport",
     "build_review_report",
     "build_review_report_all_windows",
+    # Review actions queue (manual-only queue)
+    "ReviewAction",
+    "ReviewActionsQueue",
+    "build_review_actions_queue",
+    "build_review_actions_queue_all_windows",
 ]

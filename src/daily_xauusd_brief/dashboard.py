@@ -1236,6 +1236,71 @@ if (_sh_dir / "__init__.py").exists():
             except Exception as _re:
                 st.caption(f"Review report unavailable: {_re}")
 
+            # ── Review Actions Queue (manual-only) ─────────────────────────────
+            st.markdown("#### 🎯 Review Actions Queue")
+            st.caption(
+                "Prioritized action list for manual review. "
+                "No auto-apply, no execution."
+            )
+            q_window = st.selectbox(
+                "Queue window",
+                options=[7, 14, 30],
+                index=0,
+                format_func=lambda d: f"{d} day(s)",
+                key="queue_window_days",
+            )
+
+            try:
+                q = build_review_actions_queue(snap, window_days=q_window)
+
+                # Header stats
+                c1, c2, c3 = st.columns([2, 2, 2])
+                c1.metric("Queue window", f"{q.window_days}d")
+                c2.metric("Total actions", q.total_count)
+                c3.metric(
+                    "Top priority",
+                    q.top_action().title[:40] if q.total_count > 0 else "—",
+                )
+
+                if not q.has_sufficient_history:
+                    st.warning(
+                        "⚠️ Insufficient history. Showing current-snapshot queue only."
+                    )
+
+                if q.is_empty():
+                    st.info(
+                        "✅ No actions queued. All items reviewed or no issues detected."
+                    )
+                else:
+                    # Export: markdown (left) + CSV (right)
+                    col_md, col_csv = st.columns([1, 1])
+                    with col_md:
+                        st.markdown(q.to_markdown())
+                    with col_csv:
+                        st.code(q.to_csv(), language=None)
+
+                    # Priority-sorted table
+                    st.markdown(
+                        f"**{q.total_count} action(s) — sorted by priority**"
+                    )
+                    header = ["PRIORITY", "CATEGORY", "TITLE", "SEVERITY", "AGE"]
+                    rows = []
+                    for a in q.actions:
+                        rows.append(
+                            [
+                                f"{a.priority_score:.1f}",
+                                a.category,
+                                a.title[:55],
+                                a.severity.upper(),
+                                a.age_label,
+                            ]
+                        )
+                    _df = pd.DataFrame(rows, columns=header)
+                    st.table(_df)
+
+            except Exception as _qre:
+                st.caption(f"Review Actions Queue unavailable: {_qre}")
+
     except Exception as _e:
         st.warning(f"Strategy Health unavailable: {_e}")
 else:
