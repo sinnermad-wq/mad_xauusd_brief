@@ -141,8 +141,15 @@ def briefing_score(
           base = max(min_floor, briefing_confidence?) else 0.5 fallback
           floor at min_floor (so absent numeric confidence != all-or-nothing).
     """
-    if not briefing_present or briefing_bias is None:
+    if not briefing_present:
         return 0.0
+
+    # Briefing file exists but has no bias field — use confidence if available,
+    # else soft-default 0.5 (neutral signal is still informative for fusion).
+    if briefing_bias is None:
+        if isinstance(briefing_confidence, (int, float)):
+            return max(min_floor, float(briefing_confidence))
+        return 0.5   # neutral fallback: present but uninformative
 
     bb = _bias_key(briefing_bias)
     if bb not in ("bullish", "bearish"):
