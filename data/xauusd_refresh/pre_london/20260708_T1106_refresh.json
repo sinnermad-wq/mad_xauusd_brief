@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "timestamp_hkt": "2026-07-08T11:06:17+08:00",
+  "job_name": "xauusd_pre_london_refresh",
+  "job_type": "pre_london",
+  "symbol": "XAUUSD",
+  "market_status": "open",
+  "market_bias": "unknown",
+  "volatility_regime": "unknown",
+  "key_levels": {},
+  "event_risk": {
+    "macro_events": [],
+    "fed_speakers": [],
+    "major_economic": [],
+    "geopolitical_alerts": [],
+    "event_count": 0,
+    "high_impact_today": false
+  },
+  "session_note": "",
+  "trading_stance": "neutral_watch",
+  "confidence": 0.4,
+  "source_window": {
+    "start": "2026-07-08T07:00:00Z",
+    "end": "2026-07-08T11:06:16Z"
+  },
+  "warnings": [
+    "limited bar count (2) — interpret with caution"
+  ],
+  "generated_at": "2026-07-08T11:06:17+08:00"
+}

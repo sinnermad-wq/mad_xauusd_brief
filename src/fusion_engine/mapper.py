@@ -118,7 +118,12 @@ def read_candlestick_snapshot(candle_output) -> dict:
 
 
 def read_briefing_snapshot(briefing_payload: Optional[dict]) -> dict:
-    """Return a flat dict of briefing signals. Empty fields when payload absent."""
+    """Return a flat dict of briefing signals. Empty fields when payload absent.
+
+    V5 additions:
+      • summary_zh  — narrator-produced or legacy final_summary
+      • final_summary — raw legacy field for backward compat
+    """
     if not briefing_payload:
         return {
             "present":       False,
@@ -127,6 +132,8 @@ def read_briefing_snapshot(briefing_payload: Optional[dict]) -> dict:
             "regime_tag":    None,
             "event_risk":    None,
             "news_sentiment": None,
+            "summary_zh":    None,
+            "final_summary": None,
         }
     # Common shapes: {"bias":..., "confidence":..., ...}
     return {
@@ -138,4 +145,10 @@ def read_briefing_snapshot(briefing_payload: Optional[dict]) -> dict:
         "regime_tag":     briefing_payload.get("regime_tag"),
         "event_risk":     briefing_payload.get("event_risk"),
         "news_sentiment": briefing_payload.get("news_sentiment"),
+        # V5: narrator summary preferred; fallback to legacy final_summary
+        "summary_zh":     (
+            briefing_payload.get("summary_zh")
+            or briefing_payload.get("final_summary")
+        ) if briefing_payload else None,
+        "final_summary":  briefing_payload.get("final_summary"),
     }

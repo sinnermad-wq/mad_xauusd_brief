@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "timestamp_hkt": "2026-07-14T08:15:49+08:00",
+  "job_name": "xauusd_morning_briefing",
+  "job_type": "morning",
+  "symbol": "XAUUSD",
+  "market_status": "open",
+  "market_bias": "unknown",
+  "volatility_regime": "unknown",
+  "key_levels": {},
+  "event_risk": {
+    "macro_events": [],
+    "fed_speakers": [],
+    "major_economic": [],
+    "geopolitical_alerts": [],
+    "event_count": 0,
+    "high_impact_today": false
+  },
+  "session_note": "🌅 XAUUSD Morning Briefing",
+  "trading_stance": "neutral_watch",
+  "confidence": 0.45,
+  "source_window": {
+    "start": "2026-07-14T06:00:00Z",
+    "end": "2026-07-14T08:15:41Z"
+  },
+  "warnings": [
+    "limited bar count (3) — interpret with caution"
+  ],
+  "generated_at": "2026-07-14T08:15:49+08:00"
+}

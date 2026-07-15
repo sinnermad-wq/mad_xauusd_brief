@@ -1,0 +1,42 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-08T20:22:13.774172+08:00",
+  "timestamp": "2026-07-08T20:22:13+08:00",
+  "decision": "no_trade",
+  "decision_strength": "hard_block_both_stale",
+  "context_score": 50.1,
+  "price_action_score": 59.6,
+  "environment_score": 75.0,
+  "quality_score": 54.5,
+  "confluence_score": 59.8,
+  "directional_bias": "neutral",
+  "bias_strength": "weak",
+  "market_regime": "compressed",
+  "risk_state": "low",
+  "entry_readiness": "not_ready",
+  "reasons": [
+    "confluence_score:59.8",
+    "regime:compressed",
+    "structure:neutral",
+    "patterns:inside_bar",
+    "conflict:momentum_decelerating_but_bullish_bias"
+  ],
+  "conflicts": [
+    "momentum_decelerating_but_bullish_bias"
+  ],
+  "warnings": [
+    "briefing_stale",
+    "candlestick_stale",
+    "conflict_momentum_decelerating_but_bullish_bias"
+  ],
+  "inputs_used": [
+    "briefing",
+    "candlestick"
+  ],
+  "missing_inputs": [],
+  "_briefing_timestamp": "2026-07-08T11:06:16+08:00",
+  "_candle_timestamp": "2026-07-08T19:51:40+08:00",
+  "_candle_close": 4054.9,
+  "_candle_direction_bias": 0.306,
+  "_candle_primary_state": "compressed"
+}

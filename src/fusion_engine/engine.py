@@ -129,12 +129,24 @@ class FusionEngine:
             briefing_snap=briefing_snap,
         )
 
-        # ── Step 8: assemble FusionOutput ─────────────────────────────────
+        # ── Step 8: extended V5 fields ────────────────────────────────────
+        # regime_tag: derived from consensus + candle structure
+        regime_tag = _derive_regime_tag(consensus, candle_snap)
+
+        # execution_intent_str: "long_only"|"short_only"|"both"|"none"
+        execution_intent_str = _derive_execution_intent_str(fusion_bias, trade_candidate)
+
+        # signal_strength: derived from fusion_confidence bands
+        signal_strength = _derive_signal_strength(fusion_conf)
+
+        # summary_zh: narrator/briefing output → fallback to explanation_zh
+        summary_zh = _derive_summary_zh(briefing_snap, explanation_zh)
+
+        # ── Step 9: assemble FusionOutput ─────────────────────────────────
         return FusionOutput(
             engine_name="fusion",
             schema_version="4.0",
             run_id=fusion_input.run_id or uuid.uuid4().hex[:12],
-            # signal_id derives from candle's intent if present, else run_id short
             signal_id=_derive_signal_id(
                 candle_signal_id=candle_snap.get(
                     "execution_intent", {}
@@ -151,12 +163,17 @@ class FusionEngine:
             conflict_label=conflict,
             trade_candidate=trade_candidate,
 
-            # Execution-ready mirrors: Fusion is still research-only.
-            decision_ready=trade_candidate,           # V4: gated on trade_candidate
-            trade_eligible=trade_candidate,           # V4: same gate
+            decision_ready=trade_candidate,
+            trade_eligible=trade_candidate,
             execution_status="not_sent",
             execution_mode="none",
             execution_intent=intent,
+            execution_intent_str=execution_intent_str,
+
+            signal_strength=signal_strength,
+            regime_tag=regime_tag,
+            invalidation_reason=None,          # Phase 1: always null
+            summary_zh=summary_zh,
 
             explanation_zh=explanation_zh,
             source_payload={
@@ -331,3 +348,80 @@ def _derive_signal_id(*, candle_signal_id: Optional[str], run_id: str) -> str:
     if candle_signal_id and candle_signal_id.startswith("sig-"):
         return f"fus-{run_id[:8]}-{candle_signal_id[4:]}"
     return f"fus-{run_id[:8]}"
+
+
+def _derive_regime_tag(consensus: str, candle_snap: dict) -> str:
+    """Derive regime_tag from consensus label + candle structure_state.
+
+    Logic:
+      • ALIGNED + trending structure  → "trending"
+      • ALIGNED + range structure     → "range"
+      • MIXED                         → "volatile"
+      • INSUFFICIENT_CONTEXT          → "unknown"
+      • counter-trend conflict         → "volatile"
+    """
+    structure = candle_snap.get("structure_state", "") or ""
+
+    if consensus == ConsensusLabel.MIXED:
+        return "volatile"
+    if consensus == ConsensusLabel.INSUFFICIENT_CONTEXT:
+        return "unknown"
+
+    if structure in ("uptrend", "downtrend"):
+        return "trending"
+    if structure in ("range", "transition"):
+        return "range"
+
+    # PARTIALLY_ALIGNED or ALIGNED with unknown structure
+    return "unknown"
+
+
+def _derive_execution_intent_str(fusion_bias: str, trade_candidate: bool) -> Optional[str]:
+    """Map fusion_bias + trade_candidate to execution_intent_str.
+
+    Returns:
+      bullish + trade_candidate → "long_only"
+      bearish + trade_candidate → "short_only"
+      neutral + trade_candidate → "both"
+      not trade_candidate       → "none"
+    """
+    if not trade_candidate:
+        return "none"
+    mapping = {
+        "bullish": "long_only",
+        "bearish": "short_only",
+        "neutral": "both",
+    }
+    return mapping.get(fusion_bias, "none")
+
+
+def _derive_signal_strength(fusion_conf: float) -> str:
+    """Derive signal_strength label from fusion_confidence value."""
+    if fusion_conf >= 0.75:
+        return "strong"
+    if fusion_conf >= 0.50:
+        return "moderate"
+    if fusion_conf >= 0.25:
+        return "weak"
+    return "unknown"
+
+
+def _derive_summary_zh(briefing_snap: dict, explanation_zh: str) -> str:
+    """Extract summary_zh from briefing payload, fallback to explanation_zh.
+
+    Briefing payload may contain 'summary_zh' (from narrator V4) or
+    'final_summary' (legacy briefing output).
+    If neither found, return explanation_zh as safe fallback.
+    """
+    # Primary: narrator-produced summary (added to briefing in future)
+    s = briefing_snap.get("summary_zh") if briefing_snap.get("present") else None
+    if s:
+        return s[:500]  # hard cap at 500 chars
+
+    # Legacy: final_summary from format_report
+    s = briefing_snap.get("final_summary") if briefing_snap.get("present") else None
+    if s:
+        return s[:500]
+
+    # Safe fallback — explanation_zh is always available
+    return explanation_zh

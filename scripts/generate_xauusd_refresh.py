@@ -442,6 +442,197 @@ def _format_telegram(output: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ── Rich Chinese Telegram formatter (replaces _format_telegram for morning) ──
+
+def _build_chinese_briefing(output: Dict[str, Any]) -> str:
+    """Build the full rich Chinese briefing message for Telegram.
+
+    This is printed to stdout and delivered by the Hermes scheduler.
+    Replaces the agent-generated summary in script-only mode.
+    """
+    import sys
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+    now = output.get("generated_at", "")[:16].replace("T", " ")
+    mode_label = {
+        "morning": "早市簡報",
+        "pre_london": "倫敦前簡報",
+        "pre_ny": "紐約前簡報",
+    }.get(output.get("job_type", ""), "簡報")
+
+    price = output.get("key_levels", {}).get("current_price")
+    bias_raw = output.get("market_bias", "unknown")
+    regime = output.get("volatility_regime", "normal")
+    stance = output.get("trading_stance", "neutral")
+    conf = output.get("confidence", 0)
+    kl = output.get("key_levels", {})
+    warnings = output.get("warnings", []) or []
+    status = output.get("market_status", "open")
+    session_note = output.get("session_note", "")
+
+    # ── Bias mapping ──────────────────────────────────────────────────────────
+    BIAS_MAP = {
+        "bullish": "偏多",
+        "bearish": "偏空",
+        "neutral": "中性",
+        "unknown": "中性",
+    }
+    bias_cn = BIAS_MAP.get(bias_raw.lower(), "中性")
+    bias_emoji = {"偏多": "🟢", "偏空": "🔴", "中性": "⚪"}.get(bias_cn, "⚪")
+
+    # ── Regime label ─────────────────────────────────────────────────────────
+    regime_cn = {"low": "低波", "normal": "正常", "high": "高波", "unknown": ""}.get(
+        regime, ""
+    )
+    bias_line = f"{bias_emoji} {bias_cn}"
+    if regime_cn:
+        bias_line += f" · {regime_cn}波動"
+
+    # ── Key levels ────────────────────────────────────────────────────────────
+    r1 = kl.get("r1")
+    r2 = kl.get("r2")
+    s1 = kl.get("s1")
+    s2 = kl.get("s2")
+    recent_high = kl.get("recent_high")
+    recent_low = kl.get("recent_low")
+    pivot = kl.get("pivot")
+
+    # ── Stance description ────────────────────────────────────────────────────
+    stance_cn = {
+        "cautious_long": "短線偏多，留意支持位守穩",
+        "cautious_short": "短線偏空，留意阻力位壓制",
+        "long_bias": "偏多格局，高概率延續",
+        "short_bias": "偏空格局，高概率延續",
+        "breakout_long": "突破偏多，順勢跟進",
+        "breakout_short": "突破偏空，順勢跟進",
+        "neutral_watch": "觀望為主，等待方向",
+        "range_watch_pre_ny": "區間對待，突破跟進",
+        "long_into_ny": "做多意向，倫敦→紐約順勢",
+        "short_into_ny": "做空意向，倫敦→紐約順勢",
+        "neutral_pre_ny": "紐約前中性，等待催化劑",
+    }.get(stance, f"中性觀望")
+
+    # ── Build message ─────────────────────────────────────────────────────────
+    lines = []
+    lines.append("📌 XAUUSD " + mode_label)
+    lines.append("")
+    lines.append(f"短線傾向：{bias_line}")
+
+    if price:
+        lines.append(f"現價參考：{price:,.2f}")
+
+    lines.append("")
+    lines.append("關鍵位")
+    level_parts = []
+    if s1:
+        level_parts.append(f"支持：{s1:,.2f}")
+    if s2:
+        level_parts.append(f"支持二：{s2:,.2f}")
+    if r1:
+        level_parts.append(f"阻力：{r1:,.2f}")
+    if r2:
+        level_parts.append(f"{r2:,.2f}")
+    if level_parts:
+        # Merge into "支持：X / Y  阻力：X / Y"
+        sup_parts = []
+        res_parts = []
+        for p in level_parts:
+            if p.startswith("支持"):
+                sup_parts.append(p.replace("支持：", ""))
+            elif p.startswith("阻力"):
+                res_parts.append(p.replace("阻力：", ""))
+        level_line = ""
+        if sup_parts:
+            level_line += "支持：" + " / ".join(sup_parts)
+        if res_parts:
+            if level_line:
+                level_line += "  "
+            level_line += "阻力：" + " / ".join(res_parts)
+        lines.append("- " + level_line)
+    else:
+        lines.append("- 數據不足，暫無")
+
+    # Recent high/low
+    if recent_high and recent_low:
+        lines.append(f"- 近端高低：{recent_low:,.2f} ~ {recent_high:,.2f}")
+
+    # Pivot
+    if pivot:
+        lines.append(f"- 軸心：{pivot:,.2f}")
+
+    lines.append("")
+    lines.append("操作劇本")
+    if s1 and r1:
+        lines.append(f"- 守穩 {s1:,.2f}：上方仍可望再試 {r1:,.2f}" +
+                     (f" 至 {r2:,.2f}" if r2 else ""))
+        lines.append(f"- 跌穿 {s1:,.2f}：短線回調壓力增加，留意 {s2:,.2f}" if s2 else "- 跌穿 {s1:,.2f}：短線回調壓力增加")
+    elif price:
+        lines.append(f"- 現價 {price:,.2f} 附近震盪，等待方向突破確認")
+    else:
+        lines.append("- 方向未明，觀望為主")
+
+    lines.append("")
+    lines.append("一句總結")
+    # Dynamic summary based on bias + price position
+    if bias_raw == "bullish" and price and r1:
+        spread = ((price - s1) / (r1 - s1) * 100) if (r1 - s1) > 0 else 50
+        if spread > 70:
+            summary = f"金價偏強，現價 {price:,.2f} 已突破中位，謹慎追價，留意 {r1:,.2f} 附近阻力。"
+        else:
+            summary = f"金價偏穩，守住 {s1:,.2f} 仍有上試 {r1:,.2f} 機會。"
+    elif bias_raw == "bearish" and price and s1:
+        spread = ((price - s1) / (r1 - s1) * 100) if (r1 - s1) > 0 else 50
+        if spread < 30:
+            summary = f"金價偏弱，現價 {price:,.2f} 靠近支持 {s1:,.2f}，若失守或擴大回調。"
+        else:
+            summary = f"金價偏軟，上方阻力 {r1:,.2f} 壓制，未突破前仍以反彈做空為主。"
+    elif bias_raw == "neutral" or bias_raw == "unknown":
+        summary = "方向未明，市場觀望情緒主導，建議等待突破確認後再跟進。"
+    else:
+        summary = stance_cn
+
+    lines.append(f"- {summary}")
+
+    # Risk warnings
+    lines.append("")
+    lines.append("風險提示")
+    risk_items = []
+    if regime == "high":
+        risk_items.append("波動偏高，風險管理優先")
+    if status == "closed_weekend":
+        risk_items.append("周末休市，簡報基於最近交易日數據")
+    high_impact = output.get("event_risk", {}).get("high_impact_today", False)
+    if high_impact:
+        risk_items.append("今日有重要經濟數據公佈，謹慎操作")
+    if warnings:
+        for w in warnings[:2]:
+            w_cn = w
+            for en, cn in [
+                ("limited bar count", "數據不足"),
+                ("high-impact events today", "重要數據在即"),
+                ("market closed", "市場休市"),
+                ("London open", "倫敦開市"),
+                ("NY open", "紐約開市"),
+                ("weekend", "周末"),
+            ]:
+                if en.lower() in w.lower():
+                    w_cn = cn
+                    break
+            risk_items.append(w_cn)
+    if not risk_items:
+        risk_items.append("留意美國數據、公債息率與美元反應")
+    for r in risk_items:
+        lines.append(f"- {r}")
+
+    lines.append("")
+    lines.append(f"更新時間：{now} HKT")
+
+    return "\n".join(lines)
+
+
 # ── file output ───────────────────────────────────────────────────────────────
 
 def _output_dir(mode: str) -> Path:
@@ -494,9 +685,13 @@ def _write_md(output: Dict[str, Any], mode: str, hkt_now: datetime) -> Path:
 
 
 def _dispatch_telegram(output: Dict[str, Any], dry_run: bool) -> bool:
-    """Send Telegram. Returns True on success, False on failure."""
+    """Send Telegram via hermes_tools (legacy path — kept for manual invocation).
+
+    In script-only cron mode, the scheduler reads stdout instead.
+    This function is now only used for manual dry-run testing.
+    """
     try:
-        text = _format_telegram(output)
+        text = _build_chinese_briefing(output)
         if dry_run:
             print("[DRY RUN] Telegram message:")
             print(text)
@@ -521,13 +716,23 @@ def _dispatch_telegram(output: Dict[str, Any], dry_run: bool) -> bool:
 # ── main logic ───────────────────────────────────────────────────────────────
 
 def run(mode: str, dry_run: bool = False, force: bool = False) -> int:
-    """Generate refresh briefing. Returns 0 on success, 1 on error, 2 on skip."""
+    """Generate refresh briefing. Returns 0 on success, 1 on error, 2 on skip.
+
+    In script-only mode (no_agent cron), stdout carries the final Chinese
+    message for the scheduler to deliver. File writes go to stderr / logs.
+    """
+    import sys
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
     hkt_now = now_hkt()
     today = today_hkt()
 
-    # Weekend skip
+    # Weekend skip — silently (scheduler needs to see output)
     if is_weekend(today) and not force:
-        print(f"[{hkt_now}] Weekend skip — {today}")
+        print("[SILENT]", file=sys.stderr)
         return 0
 
     # Mode to generator
@@ -537,7 +742,7 @@ def run(mode: str, dry_run: bool = False, force: bool = False) -> int:
         "pre_ny": _generate_pre_ny_briefing,
     }
     if mode not in generators:
-        print(f"ERROR: unknown mode '{mode}'. Choose: {list(generators.keys())}")
+        print(f"ERROR: unknown mode '{mode}'. Choices: {list(generators.keys())}", file=sys.stderr)
         return 1
 
     generator = generators[mode]
@@ -550,9 +755,9 @@ def run(mode: str, dry_run: bool = False, force: bool = False) -> int:
     if data.get("error"):
         status = _detect_market_status(hkt_now)
         if status == "closed_weekend" and not force:
-            print(f"[{hkt_now}] Weekend/holiday skip")
+            print("[SILENT]", file=sys.stderr)
             return 0
-        print(f"WARNING: data fetch issue: {data.get('error')} — proceeding with available data")
+        print(f"WARNING: data fetch issue: {data.get('error')} — proceeding with available data", file=sys.stderr)
 
     # Build output
     output = generator(bars, hkt_now, dry_run)
@@ -561,18 +766,25 @@ def run(mode: str, dry_run: bool = False, force: bool = False) -> int:
     if len(bars) < 5:
         output["warnings"].append(f"limited bar count ({len(bars)}) — interpret with caution")
 
-    # Write files FIRST (always)
-    json_path = _write_json(output, mode, hkt_now)
-    md_path = _write_md(output, mode, hkt_now)
-    print(f"Written: {json_path}")
-    print(f"Written: {md_path}")
+    # Always write files (for audit / journal assembler)
+    try:
+        json_path = _write_json(output, mode, hkt_now)
+        md_path = _write_md(output, mode, hkt_now)
+        print(f"Written JSON: {json_path}", file=sys.stderr)
+        print(f"Written MD:   {md_path}", file=sys.stderr)
+    except Exception as e:
+        print(f"WARNING: file write failed: {e}", file=sys.stderr)
 
-    # Dispatch Telegram AFTER file write (best-effort)
-    tg_ok = _dispatch_telegram(output, dry_run)
-    if tg_ok:
-        print("Telegram: OK")
-    else:
-        print("Telegram: FAILED (JSON/MD already saved)")
+    # ── STDOUT: final Chinese message (delivered by scheduler) ─────────────
+    try:
+        message = _build_chinese_briefing(output)
+        print(message)   # ← stdout = scheduler delivery payload
+    except Exception as e:
+        # Fallback message on any formatting error — never crash
+        fallback = f"📌 XAUUSD {mode} 簡報\n\n⚠️ 格式化失敗：{e}\n請查閱 data/xauusd_refresh/{mode}/ 了解詳情。"
+        print(fallback, file=sys.stderr)
+        print(f"ERROR: _build_chinese_briefing failed: {e}", file=sys.stderr)
+        return 1
 
     return 0
 

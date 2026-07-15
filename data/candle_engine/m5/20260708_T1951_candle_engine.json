@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-07-08T19:51:40+08:00",
+  "generated_at": "2026-07-08T19:51:40.634417+08:00",
+  "symbol": "GC=F",
+  "timeframe": "M5",
+  "close": 4054.9,
+  "direction_bias": 0.306,
+  "primary_state": "compressed",
+  "momentum_state": "decelerating",
+  "rejection_state": "neutral",
+  "range_state": "compressed",
+  "structure_state": "neutral",
+  "sequence_state": "neutral",
+  "pattern_tags": [
+    "inside_bar"
+  ],
+  "momentum_score": 48.0,
+  "rejection_score": 45.0,
+  "compression_score": 70.0,
+  "structure_score": 50.0,
+  "confidence_score": 42.6,
+  "context_tags": [
+    "ema_bearish_alignment",
+    "ema_near_price",
+    "compressed_range",
+    "momentum_decelerating",
+    "london_session"
+  ],
+  "warnings": [
+    "compressed range — breakout likely"
+  ],
+  "_features": {
+    "body_pct": 70.4,
+    "close_pos": 81.5,
+    "ema_distance_pct": 0.0,
+    "compression_ratio_5": 0.547,
+    "expansion_ratio_5": 1.83,
+    "recent_high": 4064.4,
+    "recent_low": 4051.5,
+    "at_recent_high": false,
+    "at_recent_low": false,
+    "is_bullish": true,
+    "is_bearish": false,
+    "is_doji": false
+  },
+  "_scores": {
+    "secondary_states": [
+      "bullish",
+      "decelerating"
+    ]
+  }
+}

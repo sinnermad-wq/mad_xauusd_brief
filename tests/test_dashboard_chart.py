@@ -92,7 +92,7 @@ class TestBuildChartBarJson:
     def test_latest_bar_time_is_valid_iso_str(self, real_candle_json: dict):
         """Bar time string is a readable UTC timestamp."""
         _, bar_time = build_chart_bar_json(real_candle_json)
-        assert "UTC" in bar_time or "2026" in bar_time
+        assert "HKT" in bar_time or "2026" in bar_time
         assert bar_time != "—"
 
     def test_none_candle_returns_empty_and_dash(self):
@@ -397,11 +397,11 @@ class TestBuildChartBarJsonFromAdapter:
                 f"Bar {i} time not sorted"
 
     def test_bar_time_str_is_valid_format(self, mock_adapter):
-        """Bar time string matches 'YYYY-MM-DD HH:MM UTC' format."""
+        """Bar time string matches 'YYYY-MM-DD HH:MM HKT' format."""
         mock_adapter.refresh(timeframes=["1h"])
         _, bar_time = _dc.build_chart_bar_json_from_adapter(mock_adapter, "1h", limit=10)
-        # Format: "YYYY-MM-DD HH:MM UTC"
-        assert "UTC" in bar_time
+        # Format: "YYYY-MM-DD HH:MM HKT"
+        assert "HKT" in bar_time
         assert len(bar_time) > 10
 
     def test_renders_valid_html_with_adapter_bars(self, mock_adapter):

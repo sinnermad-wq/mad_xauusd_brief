@@ -31,6 +31,7 @@ from fusion_engine import (
     FusionEngine,
     FusionOutput,
     build_fusion_input,
+    read_fusion_record,
     write_fusion_record,
 )
 from fusion_engine.models import FusionInput
@@ -273,6 +274,45 @@ class TestHistoryRoundTrip:
         assert loaded["execution_intent"]["decision"] == "short"
         assert loaded["explanation_zh"] == out.explanation_zh
 
+    # ── E2: V5 new fields roundtrip ────────────────────────────────────────
+
+    def test_v5_fields_written_and_read(self, tmp_path: Path):
+        """All 5 new V5 fields survive write→read roundtrip."""
+        c = _candle(bias="bullish", confidence=0.85, trade_eligible=True)
+        b = _briefing(bias="bullish", confidence=0.7)
+        fi = build_fusion_input(c, b, None)
+        out = FusionEngine().fuse(fi)
+
+        # Verify non-default values were set (trade_candidate=true → intent_str≠none)
+        assert out.execution_intent_str is not None
+        assert out.signal_strength != "unknown"
+        assert out.summary_zh != ""
+
+        path = write_fusion_record(out, tmp_path, ts="2026-06-26")
+        loaded = read_fusion_record(path)
+
+        assert loaded.execution_intent_str == out.execution_intent_str
+        assert loaded.signal_strength      == out.signal_strength
+        assert loaded.regime_tag           == out.regime_tag
+        assert loaded.invalidation_reason  is None   # always null Phase 1
+        assert loaded.summary_zh            == out.summary_zh
+
+    def test_summary_zh_from_legacy_final_summary(self, tmp_path: Path):
+        """summary_zh falls back to legacy final_summary (existing daily JSON shape)."""
+        legacy_briefing = {
+            "bias":          "neutral",
+            "confidence":    0.5,
+            "final_summary": "宏觀中性，技術面主導。",
+        }
+        c = _candle(bias="bullish", confidence=0.85, trade_eligible=True)
+        fi = build_fusion_input(c, legacy_briefing, None)
+        out = FusionEngine().fuse(fi)
+
+        assert out.summary_zh == legacy_briefing["final_summary"]
+        path = write_fusion_record(out, tmp_path, ts="2026-06-26")
+        loaded = read_fusion_record(path)
+        assert loaded.summary_zh == out.summary_zh
+
 
 # ── 8. CLI mode surface (smoke, no execution) ───────────────────────────────
 
@@ -343,6 +383,55 @@ class TestBackCompat:
         assert c2.bias == c.bias
         assert c2.confidence == c.confidence
         assert c2.signal_id == c.signal_id
+
+    # ── E2: backward compat ─────────────────────────────────────────────────
+
+    def test_old_fusion_json_missing_v5_fields_loads_with_defaults(self):
+        """Old fusion JSON without new V5 fields loads without error, uses defaults."""
+        old_json = {
+            "engine_name":       "fusion",
+            "schema_version":   "4.0",
+            "run_id":           "old001",
+            "signal_id":        "",
+            "symbol":           "XAUUSD",
+            "timestamp":        "2026-06-27T00:00:00",
+            "timeframe":        "1D",
+            "fusion_bias":      "bullish",
+            "fusion_confidence": 0.75,
+            "consensus_label":  "aligned",
+            "conflict_label":   "none",
+            "trade_candidate":  True,
+            "decision_ready":   True,
+            "trade_eligible":   True,
+            "execution_status": "not_sent",
+            "execution_mode":   "none",
+            "execution_intent": {"decision": "long", "confidence": 0.75},
+            "explanation_zh":   "Old format, no V5 fields.",
+            "source_payload":   {},
+            # ← no execution_intent_str, signal_strength, regime_tag,
+            #   invalidation_reason, summary_zh
+        }
+        out = FusionOutput.from_dict(old_json)
+        # New fields default safely
+        assert out.execution_intent_str is None
+        assert out.signal_strength      == "unknown"
+        assert out.regime_tag           == "unknown"
+        assert out.invalidation_reason is None
+        assert out.summary_zh           == ""
+        # Old fields preserved
+        assert out.fusion_bias == "bullish"
+        assert out.trade_candidate is True
+
+    def test_dashboard_payload_v5_keys_present(self):
+        """to_dict includes all V5 fields for dashboard consumption."""
+        c = _candle(bias="bullish", confidence=0.85, trade_eligible=True)
+        b = _briefing(bias="bullish", confidence=0.7)
+        fi = build_fusion_input(c, b, None)
+        out = FusionEngine().fuse(fi)
+        d = out.to_dict()
+        for k in ("execution_intent_str", "signal_strength",
+                  "regime_tag", "invalidation_reason", "summary_zh"):
+            assert k in d, f"missing dashboard key: {k}"
 
 
 # ── Structural / unit tests ───────────────────────────────────────────────────

@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "timestamp": "2026-07-08T19:50:53+08:00",
+  "generated_at": "2026-07-08T19:50:53.728416+08:00",
+  "symbol": "GC=F",
+  "timeframe": "M5",
+  "close": 4054.1,
+  "direction_bias": 0.179,
+  "primary_state": "compressed",
+  "momentum_state": "decelerating",
+  "rejection_state": "neutral",
+  "range_state": "compressed",
+  "structure_state": "neutral",
+  "sequence_state": "neutral",
+  "pattern_tags": [
+    "inside_bar"
+  ],
+  "momentum_score": 40.0,
+  "rejection_score": 45.0,
+  "compression_score": 85.0,
+  "structure_score": 50.0,
+  "confidence_score": 30.4,
+  "context_tags": [
+    "ema_bearish_alignment",
+    "ema_near_price",
+    "compressed_range",
+    "momentum_decelerating",
+    "london_session"
+  ],
+  "warnings": [
+    "compressed range — breakout likely"
+  ],
+  "_features": {
+    "body_pct": 52.4,
+    "close_pos": 66.7,
+    "ema_distance_pct": 0.0,
+    "compression_ratio_5": 0.436,
+    "expansion_ratio_5": 2.295,
+    "recent_high": 4064.4,
+    "recent_low": 4051.5,
+    "at_recent_high": 

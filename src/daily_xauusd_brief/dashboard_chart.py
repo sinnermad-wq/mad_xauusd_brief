@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import math
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 # ── Lightweight Charts HTML template ────────────────────────────────────────
@@ -65,7 +65,7 @@ _CHART_HTML = """<!DOCTYPE html>
 <body>
 <div id="chart-container">
   <div id="legend"></div>
-  <div id="timestamp">bar: —</div>
+  <div id="timestamp">bar: -</div>
   <div id="chart"></div>
 </div>
 <script src="{cdn}"></script>
@@ -86,7 +86,7 @@ _CHART_HTML = """<!DOCTYPE html>
       height: document.getElementById("chart").parentElement.clientHeight,
       crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
       rightPriceScale: {{ borderColor: "#2a2e39" }},
-      timeScale: {{ borderColor: "#2a2e39", timeVisible: true, secondsVisible: false }},
+      timeScale: {{ borderColor: "#2a2e39", timeVisible: true, secondsVisible: false, timeZone: 'Asia/Hong_Kong' }},
     }}
   );
 
@@ -151,12 +151,28 @@ _CHART_HTML = """<!DOCTYPE html>
       ` ${{d.close.toFixed(2)}}`;
   }});
 
-  // Update timestamp badge
-  if (barData.length > 0) {{
-    const last = barData[barData.length - 1];
-    document.getElementById("timestamp").textContent =
-      "latest bar: " + new Date(last.time * 1000).toUTCString();
-  }}
+  // Update timestamp badge — robust HKT conversion using Date.UTC
+    if (barData.length > 0) {{
+      const last = barData[barData.length - 1];
+      // Unix timestamp is seconds since 1970-01-01 00:00:00 UTC
+      // Convert to HKT (UTC+8) by extracting UTC components and adding 8 hours
+      const d = new Date(last.time * 1000);
+      // Always interpret as UTC by using Date.UTC
+      const utcMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(),
+                            d.getUTCHours(), d.getUTCMinutes(), d.getUTCSeconds());
+      const hktMs = utcMs + 8 * 3600000;
+      const hkt = new Date(hktMs);
+      const pad = n => String(n).padStart(2, "0");
+      const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      const monNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+      document.getElementById("timestamp").textContent =
+        "latest bar: " +
+        dayNames[hkt.getUTCDay()] + ", " +
+        String(hkt.getUTCDate()).padStart(2,"0") + " " +
+        monNames[hkt.getUTCMonth()] + " " +
+        hkt.getUTCFullYear() + " " +
+        pad(hkt.getUTCHours()) + ":" + pad(hkt.getUTCMinutes()) + ":" + pad(hkt.getUTCSeconds()) + " HKT";
+    }}
 
   chart.timeScale().fitContent();
   window.addEventListener("resize", () => {{
@@ -291,9 +307,10 @@ def build_chart_bar_json(latest_candle: Optional[dict]) -> tuple[list[dict], str
         ts_raw.replace("Z", "+00:00")
     ).timestamp())
 
+    HKT = timezone(timedelta(hours=8))
     latest_bar_str = datetime.fromisoformat(
         ts_raw.replace("Z", "+00:00")
-    ).strftime("%Y-%m-%d %H:%M UTC")
+    ).astimezone(HKT).strftime("%Y-%m-%d %H:%M HKT")
 
     bars = generate_historical_bars(
         anchor_close=close,
@@ -361,7 +378,10 @@ def build_chart_bar_json_from_adapter(
 
     latest = bars_candle[-1]
     # Format: match the "YYYY-MM-DD HH:MM UTC" pattern used elsewhere
-    dt_str = latest.datetime.strftime("%Y-%m-%d %H:%M UTC")
+    # Format as HKT (UTC+8)
+    hkt_dt = latest.datetime.replace(tzinfo=timezone.utc).astimezone() if latest.datetime.tzinfo is None \
+                else latest.datetime.astimezone()
+    dt_str = hkt_dt.strftime("%Y-%m-%d %H:%M HKT")
     return bars, dt_str
 
 

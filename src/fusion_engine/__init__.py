@@ -30,7 +30,7 @@ from .models import (
     FusionOutput,
 )
 from .engine import FusionEngine
-from .io import write_fusion_record
+from .io import read_fusion_record, write_fusion_record
 from .mapper import build_fusion_input
 from .rules import (
     agreement_score,
@@ -49,6 +49,7 @@ __all__ = [
    "FusionOutput",
    "FusionEngine",
    "build_fusion_input",
+   "read_fusion_record",
    "write_fusion_record",
    "agreement_score",
     "briefing_score",

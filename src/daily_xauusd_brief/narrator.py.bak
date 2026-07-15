@@ -1,0 +1,167 @@
+"""LLM narrator — converts raw English news articles into Traditional Chinese
+summaries + impact lines, suitable for the XAUUSD daily brief.
+
+Design choices (v3):
+- Batch summarisation: ALL articles go into ONE prompt. Not N calls. This
+  keeps latency + quota low.
+- Output is strictly line-delimited: each line is "<idx>. <summary>||<impact>".
+- Failure modes (quota / network / parse) NEVER raise to the caller. They return
+  a NarrativeResult with success=False so the caller can fall back gracefully.
+- Output labels are restricted to: 偏多 / 偏空 / 中性 / 震盪. Anything else is
+  normalised or rejected.
+- Body is truncated to MAX_BODY_CHARS before send so we don't blow context.
+- LLM backend is provider-agnostic via llm_client.call_llm(); default DeepSeek.
+"""
+from __future__ import annotations
+
+import logging
+import re
+from typing import Optional
+
+from pydantic import BaseModel
+
+from daily_xauusd_brief.llm_client import LLMConfig, call_llm, resolve_llm_config
+from daily_xauusd_brief.models import NewsItem
+
+logger = logging.getLogger(__name__)
+
+MAX_BODY_CHARS = 600
+MAX_ARTICLES = 20
+
+# Impact label set — restrict LLM to this taxonomy. Easier to render downstream.
+_IMPACT_LABELS = ("偏多", "偏空", "中性", "震盪")
+
+
+class NarrativeResult(BaseModel):
+    """Output of the narrator. Never raises.
+
+    narrated[i] is the summary+impact pair for items[i], or None if that slot
+    failed to parse. Length always equals len(items) so callers can zip safely.
+    """
+
+    success: bool
+    narrated: list[Optional[tuple[str, str]]] = []
+    error: Optional[str] = None
+
+
+# A few-shot prompt — keeps output format stable across batches.
+_SYSTEM_PROMPT = (
+    "你是一位嚴謹的黃金 / 美元 / 利率研究員。任務：把以下新聞條目翻譯並總結成繁體中文，"
+    "然後給出對 XAUUSD 金價的可能影響。\n"
+    "輸出格式（嚴格遵守）：\n"
+    "  <編號>. <繁中一句話摘要，1–2 句>||<偏多|偏空|中性|震盪>：<一句話原因>\n"
+    "規則：\n"
+    "1) 摘要必須繁體中文、白話，使用香港 / 台灣用語（例：「聯準會」、「美元指數」、「實質利率」）。\n"
+    "2) 影響標籤只能從「偏多」「偏空」「中性」「震盪」中選一個。\n"
+    "3) 原因句子要講出金價往上 / 往下 / 持平 / 夾區間 的傳導邏輯，<= 25 字。\n"
+    "4) 編號要連續 1,2,3...，每一條獨立一行。\n"
+    "5) 唔好加額外補充、表格、Markdown。"
+)
+
+
+def build_user_prompt(items: list[NewsItem]) -> str:
+    parts = ["以下是今日候選新聞，請依格式輸出。\n"]
+    for i, item in enumerate(items, 1):
+        body = (item.description or "").strip()
+        if len(body) > MAX_BODY_CHARS:
+            body = body[:MAX_BODY_CHARS] + "…"
+        parts.append(f"[{i}] 標題：{item.title.strip()}\n")
+        if body:
+            parts.append(f"    內文：{body}\n")
+        parts.append("")
+    parts.append(f"請輸出 {len(items)} 條，編號 1..{len(items)}。")
+    return "\n".join(parts)
+
+
+def parse_narrated_response(
+    raw: str, expected_count: int
+) -> list[Optional[tuple[str, str]]]:
+    """Parse the LLM's response into a list of (summary, impact) tuples.
+
+    - extra items beyond expected_count are truncated
+    - malformed lines (without '||' delimiter) become None
+    - labels that are not in {_IMPACT_LABELS} are kept verbatim but the
+      impact reason is preserved
+    """
+    out: list[Optional[tuple[str, str]]] = []
+    if not raw:
+        return [None] * expected_count
+
+    # numbered line: "N. summary||impact"
+    line_re = re.compile(r"^\s*(\d+)\.\s*(.+?)\|\|(.+?)\s*$")
+    for line in raw.splitlines():
+        m = line_re.match(line)
+        if not m:
+            continue
+        idx = int(m.group(1))
+        summary = m.group(2).strip()
+        impact = m.group(3).strip()
+        if idx < 1 or idx > expected_count:
+            continue
+        # pad up to idx-1
+        while len(out) < idx - 1:
+            out.append(None)
+        if len(out) < idx:
+            out.append(None)
+        out[idx - 1] = (summary, impact)
+        if idx > expected_count:
+            break
+
+    # Truncate / pad to expected_count
+    out = out[:expected_count]
+    while len(out) < expected_count:
+        out.append(None)
+    return out
+
+
+def narrate(
+    items: list[NewsItem],
+    *,
+    api_key: str = "",
+    cfg: Optional[LLMConfig] = None,
+    provider: Optional[str] = None,
+    base_url: Optional[str] = None,
+    model: Optional[str] = None,
+) -> NarrativeResult:
+    """Summarise articles into Traditional Chinese. Returns NarrativeResult.
+
+    Args:
+        items: list of NewsItem to summarise.
+        api_key: convenience for backward-compat (used if cfg is None and provider is set)
+        cfg: pre-resolved LLMConfig (preferred — wins over individual args)
+        provider / base_url / model: optional overrides for resolving cfg on demand
+
+    Behaviour:
+    - Empty list → success=True, narrated=[]  (no LLM call)
+    - LLM raises (quota, network, auth) → success=False, narrated=[], error=str(exc)
+    - LLM returns malformed → success=True, narrated padded with None
+    """
+    if not items:
+        return NarrativeResult(success=True, narrated=[])
+
+    if cfg is None:
+        cfg = resolve_llm_config(
+            api_key=api_key or None,
+            override_provider=provider,
+            override_base_url=base_url,
+            override_model=model,
+        )
+
+    truncated = items[:MAX_ARTICLES]
+    user_prompt = build_user_prompt(truncated)
+
+    try:
+        raw = call_llm(_SYSTEM_PROMPT, user_prompt, cfg=cfg)
+    except Exception as exc:  # noqa: BLE001 — we deliberately don't propagate
+        logger.warning("LLM call failed for narrative: %s", exc)
+        return NarrativeResult(success=False, narrated=[], error=str(exc))
+
+    parsed = parse_narrated_response(raw, expected_count=len(truncated))
+    logger.info(
+        "narrator: %d/%d articles parsed from LLM response (provider=%s, model=%s)",
+        sum(1 for p in parsed if p is not None),
+        len(parsed),
+        cfg.provider,
+        cfg.model,
+    )
+    return NarrativeResult(success=True, narrated=parsed, error=None)

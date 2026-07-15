@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-07-11T14:08:47.797992+08:00",
+  "window_days": 7,
+  "data_range": {
+    "earliest": "2026-07-04",
+    "latest": "2026-07-11"
+  },
+  "dominant_bias": "bullish",
+  "avg_fusion_confidence": 0.6634,
+  "summary": {
+    "price": {
+      "latest": 4111.49781,
+      "high": 4175.50033,
+      "low": 4078.1066,
+      "change_pct": -1.52
+    },
+    "fusion": {
+      "total_runs": 1,
+      "bullish_count": 1,
+      "bearish_count": 0,
+      "neutral_count": 0,
+      "avg_confidence": 0.6634,
+      "trade_candidate_count": 0,
+      "conflict_none_count": 1,
+      "conflict_any_count": 0,
+      "consensus_insufficient_count": 1
+    },
+    "engine_reviews": {
+      "total_reviews": 2,
+      "avg_confidence": 64.5,
+      "outcomes_filled": 2,
+      "outcomes_correct": 2,
+      "outcomes_incorrect": 0,
+      "invalidations_hit_count": 0,
+      "insufficient_context_count": 0
+    },
+    "news": {
+      "total_articles": 80,
+      "top_tags": [
+        {
+          "tag": "central_bank",
+          "count": 73
+        },
+        {
+          "tag": "geopolitics",
+          "count": 4
+        },
+        {
+          "tag": "inflation",
+          "count": 2
+        },
+        {
+          "tag": "usd",
+          "count": 1
+        }
+      ],
+      "top_sources": [
+        {
+          "source": "FXEmpire.com",
+          "count": 24
+        },
+        {
+          "source": "Crypto Briefing",
+          "count": 13
+        },
+        {
+          "source": "news.metal.com",
+          "count": 8
+        },
+        {
+          "source": "economy.shepherdgazette.com",
+          "count": 5
+        },
+        {
+          "source": "mql5.com",
+          "count": 3
+        }
+      ]
+    },
+    "weekly_themes": [
+      "bullish (14 days)",
+      "bearish (2 days)"
+    ],
+    "briefings_in_window": 16,
+    "fusions_in_window": 1,
+    "reviews_in_window": 2
+  },
+  "data_sources": {
+    "briefing_files": 16,
+    "fusion_files": 1,
+    "engine_review_rows": 2
+  },
+  "metadata": {
+    "generated_by": "generate_weekly_digest.py",
+    "repo_root": "C:\\Users\\madwa\\projects\\daily-xauusd-bot"
+  }
+}

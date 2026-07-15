@@ -118,7 +118,14 @@ class FusionOutput:
     trade_eligible:   bool = False
     execution_status: str = "not_sent"
     execution_mode:   str = "none"
-    execution_intent: dict = field(default_factory=dict)
+    execution_intent: dict = field(default_factory=dict)  # legacy dict (for main.py compat)
+    execution_intent_str: Optional[str] = None  # V5: "long_only"|"short_only"|"both"|"none"
+
+    # V5 extended fields
+    signal_strength:      str = "unknown"   # strong | moderate | weak | unknown
+    regime_tag:           str = "unknown"   # trending | range | volatile | unknown
+    invalidation_reason: Optional[str] = None  # always null in Phase 1
+    summary_zh:           str = ""          # narrator/briefing summary; fallback explanation_zh
 
     # Free-form zh text + raw payload
     explanation_zh: str = ""
@@ -154,25 +161,30 @@ class FusionOutput:
 
     def to_dict(self) -> dict:
         return {
-            "engine_name":       self.engine_name,
-            "schema_version":    self.schema_version,
-            "run_id":            self.run_id,
-            "signal_id":         self.signal_id,
-            "symbol":            self.symbol,
-            "timestamp":         self.timestamp,
-            "timeframe":         self.timeframe,
-            "fusion_bias":       self.fusion_bias,
-            "fusion_confidence": round(self.fusion_confidence, 4),
-            "consensus_label":   self.consensus_label,
-            "conflict_label":    self.conflict_label,
-            "trade_candidate":   self.trade_candidate,
-            "decision_ready":    self.decision_ready,
-            "trade_eligible":    self.trade_eligible,
-            "execution_status":  self.execution_status,
-            "execution_mode":    self.execution_mode,
-            "execution_intent":  self.execution_intent,
-            "explanation_zh":    self.explanation_zh,
-            "source_payload":    self.source_payload,
+            "engine_name":          self.engine_name,
+            "schema_version":       self.schema_version,
+            "run_id":               self.run_id,
+            "signal_id":            self.signal_id,
+            "symbol":               self.symbol,
+            "timestamp":            self.timestamp,
+            "timeframe":            self.timeframe,
+            "fusion_bias":          self.fusion_bias,
+            "fusion_confidence":    round(self.fusion_confidence, 4),
+            "consensus_label":      self.consensus_label,
+            "conflict_label":       self.conflict_label,
+            "trade_candidate":      self.trade_candidate,
+            "decision_ready":       self.decision_ready,
+            "trade_eligible":       self.trade_eligible,
+            "execution_status":     self.execution_status,
+            "execution_mode":       self.execution_mode,
+            "execution_intent":     self.execution_intent,
+            "execution_intent_str": self.execution_intent_str,
+            "signal_strength":      self.signal_strength,
+            "regime_tag":           self.regime_tag,
+            "invalidation_reason":  self.invalidation_reason,
+            "summary_zh":           self.summary_zh,
+            "explanation_zh":      self.explanation_zh,
+            "source_payload":       self.source_payload,
         }
 
     @classmethod
@@ -199,6 +211,11 @@ class FusionOutput:
             execution_status  = data.get("execution_status", "not_sent"),
             execution_mode    = data.get("execution_mode", "none"),
             execution_intent  = data.get("execution_intent", {}),
+            execution_intent_str = data.get("execution_intent_str"),
+            signal_strength   = data.get("signal_strength", "unknown"),
+            regime_tag        = data.get("regime_tag", "unknown"),
+            invalidation_reason = data.get("invalidation_reason"),
+            summary_zh        = data.get("summary_zh", ""),
             explanation_zh    = data.get("explanation_zh", ""),
             source_payload    = data.get("source_payload", {}),
         )
