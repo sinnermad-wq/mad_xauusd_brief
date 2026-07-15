@@ -89,20 +89,49 @@ def load_recent_reports(limit: int = 14) -> list[dict]:
 
 
 def get_cron_status() -> str:
-    """Parse log file for last execution result."""
+    """Parse log file for last execution result + staleness check.
+
+    Returns:
+        ✅ Success     — last entry contains "history saved" or "cache saved" TODAY
+        ⚠️ Stale        — last entry is success but from yesterday or older
+        ❌ Failed       — last entry contains "ERROR" or "Exception"
+        ⚠️ Unknown      — log empty / not found / no recognizable entry
+    """
     if not LOG_FILE.exists():
-        return "Unknown (log not found)"
+        return "⚠️ Unknown (log not found)"
     try:
         with open(LOG_FILE, "r", encoding="utf-8") as f:
             lines = f.readlines()
+        if not lines:
+            return "⚠️ Unknown (log empty)"
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        last_success_date: str | None = None
+
+        # Scan all lines from bottom (most recent first) to find last success
         for line in reversed(lines):
-            if "history saved" in line.lower() or "cache saved" in line.lower():
+            lower = line.lower()
+            if "history saved" in lower or "cache saved" in lower:
+                # Extract date from log line, e.g. "2026-07-14 08:30:56,455 [INFO] ..."
+                date_str = line.strip().split(" ")[0]  # "2026-07-14"
+                if len(date_str) == 10 and date_str[4] == "-":
+                    last_success_date = date_str
+                break
+
+        if last_success_date:
+            if last_success_date == today:
                 return "✅ Success"
+            else:
+                return f"⚠️ Stale (last success: {last_success_date})"
+
+        # No success found — check for recent errors
+        for line in reversed(lines[:20]):  # only check last 20 lines
             if "ERROR" in line or "Exception" in line:
                 return "❌ Failed"
+        return "⚠️ Unknown"
+
     except (OSError, UnicodeDecodeError):
-        pass
-    return "⚠️ Unknown"
+        return "⚠️ Unknown (read error)"
 
 
 def load_latest_candle() -> dict | None:
@@ -299,12 +328,15 @@ with right_col:
         st.write(", ".join(found) if found else "Collecting data...")
 
         st.markdown("---")
+        # Pipeline health
         st.write("**Pipeline Health**")
         status = get_cron_status()
         if "✅" in status:
             st.success(status)
         elif "❌" in status:
             st.error(status)
+        elif "⚠️" in status:
+            st.warning(status)
         else:
             st.info(status)
 
